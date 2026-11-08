@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Sekrety i poświadczenia — nigdy do repo
+.env
+*.json.key
+credentials*.json
+service-account*.json
+
+# macOS
+.DS_Store
