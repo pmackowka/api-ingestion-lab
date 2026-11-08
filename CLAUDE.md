@@ -12,13 +12,14 @@ Cel: nauka mechanizmów ingestu na realnych i realistycznych źródłach — lim
 uwierzytelnianie, ponowienia, idempotentny zapis. Kod ma działać, a komentarze po polsku mają
 tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
 
-Kierunek domenowy: dane reklamowe po stronie wydawcy (sell-side). Etapy zbiegają się w etapie 6:
-model w BigQuery, który uzgadnia przychody z Google Ad Manager i SSP (strefa czasowa, waluta
-przeliczana kursem NBP, brutto vs netto).
+Kierunek: dane, z którymi pracuje analityk internetowy — ekosystem Google, marketing, reklama.
+Etapy 2–6 w `README.md` to pierwsza propozycja (wątek ad-tech: GAM, SSP, Prebid, uzgadnianie przychodów
+w etapie 6), nie zobowiązanie. Planowany krok: przegląd ogłoszeń o pracę dla inżynierów danych w Polsce
+(z dbt w wymaganiach) i wybór kolejnych źródeł pod typy danych, które się w nich powtarzają.
 
 ## Plan i stan
 
-Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dostęp).
+Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane, sandbox).
 Stan na 2026-11-08: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
 
 ## Struktura
