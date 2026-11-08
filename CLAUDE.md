@@ -19,7 +19,7 @@ w etapie 6), nie zobowiązanie. Planowany krok: przegląd ogłoszeń o pracę dl
 
 ## Plan i stan
 
-Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane, sandbox).
+Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
 Stan na 2026-11-08: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
 
 ## Struktura
