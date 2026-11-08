@@ -46,7 +46,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 - Projekt: `api-ingestion-lab-bq`, **sandbox BigQuery bez billingu**. Konsekwencje:
   - brak DML (`MERGE`, `INSERT`, `UPDATE`, `DELETE`) — idempotencję robimy query jobem z tabelą
-    docelową i `WRITE_TRUNCATE` (wzorzec w `nbp/ingest.py`, `load_to_bigquery`);
+    docelową i `WRITE_TRUNCATE_DATA` (wzorzec w `nbp/ingest.py`, `load_to_bigquery`);
   - tabele wygasają po 60 dniach — po wygaśnięciu ingest uruchamia się ponownie z pełnym zakresem.
 - Poświadczenia: ADC (`gcloud auth application-default login`), quota project ustawiony na
   `api-ingestion-lab-bq`. Błąd 400 „Project ... not found or deleted” = zły quota project w ADC.

@@ -1,16 +1,13 @@
 """Etap 1: kursy średnie NBP (tabela A) -> BigQuery.
 
-Przepływ:
-1. Zakres dat dzielimy na okna, bo API odrzuca zapytanie dłuższe niż 93 dni (HTTP 400).
-2. Każde okno pobieramy jednym GET-em. 404 oznacza "brak notowań" (np. weekend), nie błąd.
-3. Wszystkie wiersze ładujemy do tabeli staging (WRITE_TRUNCATE), a potem przepisujemy tabelę
-   docelową: stare wiersze spoza zakresu [start, end] + świeże wiersze ze staging.
-   Zakres jest więc zawsze zastępowany w całości, a ponowne uruchomienie nie tworzy duplikatów (idempotencja).
+Przepływ (każdy krok ma niżej własną funkcję i komentarze "co, po co, dlaczego"):
+1. split_windows    — zakres dat dzielimy na okna po 93 dni (limit API).
+2. fetch_window     — jedno okno = jeden GET; 404 znaczy "brak notowań", nie błąd.
+3. to_rows          — odpowiedź API (tabela dnia z listą walut) spłaszczamy do wierszy.
+4. load_to_bigquery — staging + przepisanie tabeli docelowej z podmianą zakresu [start, end].
 
-Dlaczego nie MERGE: sandbox BigQuery (projekt bez billingu) nie obsługuje DML.
-Zapytanie SELECT z tabelą docelową i WRITE_TRUNCATE to zwykły query job, nie DML, więc działa.
-Koszt obejścia: każde uruchomienie przepisuje całą tabelę — przy kilku MB danych bez znaczenia,
-przy dużych tabelach użylibyśmy MERGE albo nadpisywania pojedynczych partycji.
+Porównanie strategii ładowania (MERGE, append, nadpisywanie partycji...) i powód wyboru
+tej konkretnej: nbp/README.md, sekcja "Strategie ładowania".
 
 Uruchomienie:
     uv run python nbp/ingest.py --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31
@@ -31,8 +28,10 @@ API_URL = "https://api.nbp.pl/api/exchangerates/tables/A/{start}/{end}/"
 WINDOW_DAYS = 93
 
 TARGET_TABLE = "exchange_rates_a"
+# Podkreślnik na początku: tabela techniczna, nie do czytania przez analityków.
 STAGING_TABLE = "_staging_exchange_rates_a"
 
+# Jeden schemat dla staging i tabeli docelowej. Klucz naturalny: (effective_date, currency_code).
 SCHEMA = [
     bigquery.SchemaField("effective_date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("table_no", "STRING", mode="REQUIRED"),
@@ -40,17 +39,23 @@ SCHEMA = [
     bigquery.SchemaField("currency_name", "STRING"),
     # NUMERIC, nie FLOAT64: kurs to wartość dziesiętna, float wprowadza błędy zaokrągleń.
     bigquery.SchemaField("mid", "NUMERIC", mode="REQUIRED"),
+    # Kiedy wiersz trafił do BigQuery — pozwala odróżnić dane z różnych uruchomień przy debugowaniu.
     bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
 ]
 
 
 def split_windows(start: date, end: date, window_days: int = WINDOW_DAYS) -> list[tuple[date, date]]:
-    """Dzieli [start, end] (obie granice włącznie) na sąsiadujące okna po maks. window_days dni."""
+    """Dzieli [start, end] (obie granice włącznie) na sąsiadujące okna po maks. window_days dni.
+
+    Po co: API odrzuca zakres dłuższy niż 93 dni, a chcemy móc załadować np. kilka lat jednym
+    uruchomieniem. Ten sam wzorzec (pętla po kawałkach zakresu) wraca przy paginacji w etapie 2.
+    """
     if start > end:
         raise ValueError(f"start {start} jest po end {end}")
     windows = []
     cursor = start
     while cursor <= end:
+        # min(...) przycina ostatnie okno do `end`, żeby nie pytać o daty spoza zakresu.
         window_end = min(cursor + timedelta(days=window_days - 1), end)
         windows.append((cursor, window_end))
         # Następne okno zaczyna się dzień po końcu poprzedniego — bez luk i bez nakładania.
@@ -61,20 +66,30 @@ def split_windows(start: date, end: date, window_days: int = WINDOW_DAYS) -> lis
 def fetch_window(start: date, end: date) -> list[dict]:
     """Pobiera tabele A z jednego okna. Zwraca listę tabel (jedna tabela = jeden dzień notowań)."""
     url = API_URL.format(start=start.isoformat(), end=end.isoformat())
+    # NBP zwraca JSON albo XML zależnie od nagłówka Accept. Prosimy jawnie o JSON,
+    # zamiast polegać na formacie domyślnym.
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
+        # timeout: bez niego zawieszone połączenie blokuje skrypt w nieskończoność.
         with urllib.request.urlopen(request, timeout=30) as response:
             # parse_float=Decimal: kurs trafia do Pythona bez przejścia przez float.
             return json.loads(response.read(), parse_float=Decimal)
     except urllib.error.HTTPError as error:
         # NBP zwraca 404, gdy w oknie nie ma żadnego notowania (weekend, święta).
+        # To poprawny stan danych, nie awaria — zwracamy pustą listę.
         if error.code == 404:
             return []
+        # Każdy inny kod (400 = zły zakres, 5xx = awaria NBP) przerywa skrypt.
+        # Lepiej nie załadować nic niż załadować dziurawy zakres i podmienić nim dobre dane.
         raise
 
 
 def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
-    """Spłaszcza odpowiedź API: jedna tabela z N walutami -> N wierszy."""
+    """Spłaszcza odpowiedź API: jedna tabela z N walutami -> N wierszy.
+
+    Klucze słownika czytamy przez [...], nie .get(): jeśli NBP zmieni format odpowiedzi,
+    skrypt padnie z KeyError zamiast po cichu wpisać NULL-e.
+    """
     rows = []
     for table in tables:
         for rate in table["rates"]:
@@ -86,6 +101,7 @@ def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
                     "currency_name": rate["currency"],
                     # Decimal -> str: JSON load do BigQuery przyjmie tekst do kolumny NUMERIC bez utraty precyzji.
                     "mid": str(rate["mid"]),
+                    # Jedna wartość na całe uruchomienie, nie czas pojedynczego wiersza.
                     "loaded_at": loaded_at.isoformat(),
                 }
             )
@@ -93,26 +109,46 @@ def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
 
 
 def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, end: date) -> None:
-    client = bigquery.Client(project=project)
-    client.create_dataset(f"{project}.{dataset}", exists_ok=True)
+    """Zapisuje wiersze tak, żeby zakres [start, end] w tabeli docelowej został podmieniony w całości.
 
+    Idempotencja: dwa uruchomienia dla tego samego zakresu dają ten sam stan tabeli, bez duplikatów.
+    """
+    client = bigquery.Client(project=project)
+
+    # exists_ok=True: pierwsze uruchomienie tworzy dataset i tabelę, kolejne niczego nie zmieniają.
+    client.create_dataset(f"{project}.{dataset}", exists_ok=True)
     target = f"{project}.{dataset}.{TARGET_TABLE}"
     staging = f"{project}.{dataset}.{STAGING_TABLE}"
     client.create_table(bigquery.Table(target, schema=SCHEMA), exists_ok=True)
 
-    # Krok 1: staging nadpisywany w całości przy każdym uruchomieniu.
-    job_config = bigquery.LoadJobConfig(
+    # Krok 1: load do staging.
+    # Po co staging: dane z API najpierw lądują w BigQuery "obok", a dopiero potem jednym
+    # atomowym zapytaniem trafiają do tabeli docelowej. Gdy load padnie (np. NULL w kolumnie
+    # REQUIRED), tabela docelowa zostaje nietknięta.
+    # WRITE_TRUNCATE: staging zawiera zawsze tylko dane bieżącego uruchomienia.
+    load_config = bigquery.LoadJobConfig(
         schema=SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
-    client.load_table_from_json(rows, staging, job_config=job_config).result()
+    client.load_table_from_json(rows, staging, job_config=load_config).result()
 
-    # Krok 2: przepisanie tabeli docelowej jednym zapytaniem.
-    # Query job z WRITE_TRUNCATE jest atomowy: albo podmieni całą tabelę, albo zostawi ją bez zmian.
-    # Zapytanie czyta tabelę docelową i jednocześnie ją nadpisuje — BigQuery na to pozwala,
-    # bo wynik zapisuje dopiero po zakończeniu odczytu.
-    # Uwaga: WRITE_TRUNCATE z zapytania nadpisuje też schemat, więc w tabeli docelowej kolumny
-    # stają się NULLABLE. Pilnowanie REQUIRED zostaje na granicy: load do staging odrzuci wiersz z NULL-em.
+    # Krok 2: przepisanie tabeli docelowej jednym query jobem.
+    # Wynik = stare wiersze SPOZA zakresu + wszystkie wiersze ze staging. Wiersze z zakresu
+    # [start, end] są więc wymieniane w całości — także te, których NBP już nie zwraca.
+    #
+    # Dlaczego nie MERGE: projekt jest w sandboxie BigQuery, a sandbox odrzuca DML
+    # (MERGE/INSERT/UPDATE/DELETE) błędem 403. Query job z tabelą docelową to nie DML, więc działa.
+    #
+    # Dlaczego to bezpieczne: zapytanie czyta tabelę docelową i ją nadpisuje, ale BigQuery
+    # zapisuje wynik dopiero po zakończeniu zapytania, a cały job jest atomowy —
+    # albo podmieni tabelę, albo zostawi ją bez zmian.
+    #
+    # WRITE_TRUNCATE_DATA zamiast WRITE_TRUNCATE: oba nadpisują dane, ale WRITE_TRUNCATE
+    # bierze schemat z wyniku zapytania (kolumny stają się NULLABLE), a WRITE_TRUNCATE_DATA
+    # zostawia schemat tabeli — REQUIRED zostaje.
+    #
+    # @start/@end jako parametry zapytania, nie f-string: BigQuery sam pilnuje typu DATE
+    # i nie ma ryzyka wstrzyknięcia SQL.
     rewrite_sql = f"""
         SELECT * FROM `{target}`
         WHERE effective_date NOT BETWEEN @start AND @end
@@ -121,7 +157,7 @@ def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, 
     """
     query_config = bigquery.QueryJobConfig(
         destination=target,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE_DATA,
         query_parameters=[
             bigquery.ScalarQueryParameter("start", "DATE", start),
             bigquery.ScalarQueryParameter("end", "DATE", end),
@@ -138,6 +174,8 @@ def main() -> None:
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     args = parser.parse_args()
 
+    # Najpierw pobieramy wszystkie okna, dopiero potem piszemy do BigQuery.
+    # Błąd API w dowolnym oknie przerywa skrypt, zanim cokolwiek zmieni się w tabeli.
     loaded_at = datetime.now(timezone.utc)
     rows = []
     for window_start, window_end in split_windows(args.start, args.end):
@@ -145,6 +183,7 @@ def main() -> None:
         print(f"{window_start}..{window_end}: {len(tables)} dni notowań")
         rows.extend(to_rows(tables, loaded_at))
 
+    # Pusty zakres (np. sam weekend): nic nie zapisujemy — load pustej listy nie ma sensu.
     if not rows:
         print("Brak notowań w zakresie — nic do załadowania.")
         return
