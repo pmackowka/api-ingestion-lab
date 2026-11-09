@@ -24,7 +24,7 @@ Stan na 2026-11-08: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich fold
 
 ## Struktura
 
-- `README.md` — indeks połączeń + wspólne środowisko.
+- `README.md` — indeks połączeń, porównanie miejsc uruchamiania (automatyzacja) + wspólne środowisko.
 - `<system>/` — jeden folder na źródło: `ingest.py`, `test_ingest.py`, `README.md`.
 - `<system>/README.md` — konfiguracja krok po kroku: źródło i jego sprawdzone zachowanie,
   jak działa kod, schemat tabeli docelowej, konfiguracja, pułapki.
