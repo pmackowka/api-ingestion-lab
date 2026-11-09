@@ -53,19 +53,19 @@ Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą now
 ### Jak wybrać
 
 1. **Całość mała i tania?** Pełne przeładowanie. Progu w GB nie ma — granicą jest okno czasowe joba, limity API albo budżet na skanowane bajty.
-2. **Zmiany tylko w ostatnich dniach?** Nadpisanie partycji z lookbackiem. GA4 [poprawia dzienne tabele eksportu](https://support.google.com/analytics/answer/9358801) przez 2 dni plus dzień bieżący, więc job przeładowuje 3 partycje.
+2. **Zmiany tylko w ostatnich dniach?** Nadpisanie partycji z lookbackiem. GA4 [poprawia dzienne tabele eksportu](https://support.google.com/analytics/answer/9358801) przez 2 dni plus dzień bieżący, więc job przeładowuje 3 partycje. Platformy reklamowe działają podobnie: konwersje dopisują się wstecz przez okno atrybucji.
 3. **Dowolny rekord może się zmienić i ma klucz?** `MERGE`, z filtrem partycji w `ON`/`WHEN`, żeby BigQuery [przycinał skan](https://docs.cloud.google.com/bigquery/docs/using-dml-with-partitioned-tables).
 4. **Dane tylko przyrastają?** Append z deduplikacją albo — bezpieczniej przy restartach — nadpisanie partycji dnia.
 
-[Limity](https://docs.cloud.google.com/bigquery/quotas) widoczne dopiero przy skali: DML na jednej tabeli maks. 2 naraz i 20 w kolejce; 1500 load jobów na tabelę dziennie; 30 000 modyfikacji partycji na tabelę dziennie.
+[Limity](https://docs.cloud.google.com/bigquery/quotas) widoczne dopiero przy skali: DML na jednej tabeli maks. 2 naraz i 20 w kolejce, więc równoległe joby piszące przez `MERGE` czekają na siebie; 1500 load jobów na tabelę dziennie; 30 000 modyfikacji partycji na tabelę dziennie.
 
 ### Dlaczego tu przepisanie tabeli
 
 - Ok. 8 tys. wierszy rocznie; całe uruchomienie trwa ok. 7 s (zmierzone).
 - Sandbox blokuje DML, a partycjonowanie po dacie kasowałoby historię (pułapka niżej).
-- Z billingiem: partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji.
+- Z billingiem: partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji. Przy tej skali oba warianty są równie dobre; partycje dzienne z 32 wierszami to przerost.
 
-Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie wystarczy `--start` = dziś minus 7 dni — tydzień zapasu łata dni, w które job nie ruszył.
+Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie wystarczy `--start` = dziś minus 7 dni — tydzień zapasu nic nie kosztuje, a łata dni, w które job nie ruszył (awaria, wyłączony komputer, długi weekend), bez ręcznego backfillu.
 
 ## Konfiguracja krok po kroku
 
