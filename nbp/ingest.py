@@ -1,13 +1,4 @@
-"""Etap 1: kursy średnie NBP (tabela A) -> BigQuery.
-
-Przepływ (każdy krok ma niżej własną funkcję i komentarze "co, po co, dlaczego"):
-1. split_windows    — zakres dat dzielimy na okna po 93 dni (limit API).
-2. fetch_window     — jedno okno = jeden GET; 404 znaczy "brak notowań", nie błąd.
-3. to_rows          — odpowiedź API (tabela dnia z listą walut) spłaszczamy do wierszy.
-4. load_to_bigquery — staging + przepisanie tabeli docelowej z podmianą zakresu [start, end].
-
-Porównanie strategii ładowania (MERGE, append, nadpisywanie partycji...) i powód wyboru
-tej konkretnej: nbp/README.md, sekcja "Strategie ładowania".
+"""Kursy średnie NBP (tabela A) -> BigQuery.
 
 Uruchomienie:
     uv run python nbp/ingest.py --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31
@@ -45,7 +36,7 @@ SCHEMA = [
 
 
 def split_windows(start: date, end: date, window_days: int = WINDOW_DAYS) -> list[tuple[date, date]]:
-    """Dzieli [start, end] (obie granice włącznie) na sąsiadujące okna po maks. window_days dni.
+    """Krok 1: dzieli [start, end] (obie granice włącznie) na sąsiadujące okna po maks. window_days dni.
 
     Po co: API odrzuca zakres dłuższy niż 93 dni, a chcemy móc załadować np. kilka lat jednym
     uruchomieniem. Ten sam wzorzec (pętla po kawałkach zakresu) wraca przy paginacji w etapie 2.
@@ -64,7 +55,10 @@ def split_windows(start: date, end: date, window_days: int = WINDOW_DAYS) -> lis
 
 
 def fetch_window(start: date, end: date) -> list[dict]:
-    """Pobiera tabele A z jednego okna. Zwraca listę tabel (jedna tabela = jeden dzień notowań)."""
+    """Krok 2: pobiera tabele A z jednego okna jednym GET-em.
+
+    Zwraca listę tabel: jedna tabela = jeden dzień notowań z kursami wszystkich walut.
+    """
     url = API_URL.format(start=start.isoformat(), end=end.isoformat())
     # NBP zwraca JSON albo XML zależnie od nagłówka Accept. Prosimy jawnie o JSON,
     # zamiast polegać na formacie domyślnym.
@@ -85,7 +79,9 @@ def fetch_window(start: date, end: date) -> list[dict]:
 
 
 def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
-    """Spłaszcza odpowiedź API: jedna tabela z N walutami -> N wierszy.
+    """Krok 3: spłaszcza odpowiedź API: jedna tabela z N walutami -> N wierszy.
+
+    Po co: BigQuery ładuje płaskie wiersze, a API zwraca zagnieżdżoną strukturę dzień -> waluty.
 
     Klucze słownika czytamy przez [...], nie .get(): jeśli NBP zmieni format odpowiedzi,
     skrypt padnie z KeyError zamiast po cichu wpisać NULL-e.
@@ -109,7 +105,7 @@ def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
 
 
 def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, end: date) -> None:
-    """Zapisuje wiersze tak, żeby zakres [start, end] w tabeli docelowej został podmieniony w całości.
+    """Krok 4: zapisuje wiersze tak, żeby zakres [start, end] w tabeli docelowej został podmieniony w całości.
 
     Idempotencja: dwa uruchomienia dla tego samego zakresu dają ten sam stan tabeli, bez duplikatów.
     """
@@ -121,7 +117,7 @@ def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, 
     staging = f"{project}.{dataset}.{STAGING_TABLE}"
     client.create_table(bigquery.Table(target, schema=SCHEMA), exists_ok=True)
 
-    # Krok 1: load do staging.
+    # Krok 4a: load do staging.
     # Po co staging: dane z API najpierw lądują w BigQuery "obok", a dopiero potem jednym
     # atomowym zapytaniem trafiają do tabeli docelowej. Gdy load padnie (np. NULL w kolumnie
     # REQUIRED), tabela docelowa zostaje nietknięta.
@@ -132,7 +128,8 @@ def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, 
     )
     client.load_table_from_json(rows, staging, job_config=load_config).result()
 
-    # Krok 2: przepisanie tabeli docelowej jednym query jobem.
+    # Krok 4b: przepisanie tabeli docelowej jednym query jobem.
+    # Porównanie z innymi strategiami (MERGE, append, partycje): nbp/README.md, "Strategie ładowania".
     # Wynik = stare wiersze SPOZA zakresu + wszystkie wiersze ze staging. Wiersze z zakresu
     # [start, end] są więc wymieniane w całości — także te, których NBP już nie zwraca.
     #
@@ -172,10 +169,12 @@ def main() -> None:
     parser.add_argument("--dataset", default="raw_nbp")
     parser.add_argument("--start", required=True, type=date.fromisoformat)
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
+    # type=date.fromisoformat: zła data (np. 2026-13-01) kończy się błędem argparse, zanim ruszy API.
     args = parser.parse_args()
 
-    # Najpierw pobieramy wszystkie okna, dopiero potem piszemy do BigQuery.
+    # Kroki 1-3: pobranie i spłaszczenie wszystkich okien, zanim cokolwiek trafi do BigQuery.
     # Błąd API w dowolnym oknie przerywa skrypt, zanim cokolwiek zmieni się w tabeli.
+    # loaded_at liczymy raz: wszystkie wiersze z jednego uruchomienia mają ten sam znacznik.
     loaded_at = datetime.now(timezone.utc)
     rows = []
     for window_start, window_end in split_windows(args.start, args.end):
@@ -188,6 +187,7 @@ def main() -> None:
         print("Brak notowań w zakresie — nic do załadowania.")
         return
 
+    # Krok 4: zapis do BigQuery z podmianą zakresu [start, end].
     load_to_bigquery(rows, args.project, args.dataset, args.start, args.end)
     print(f"Załadowano {len(rows)} wierszy do {args.project}.{args.dataset}.{TARGET_TABLE}")
 

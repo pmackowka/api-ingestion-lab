@@ -39,60 +39,47 @@ Tabela nie jest partycjonowana — powód w sekcji „Strategie ładowania”.
 
 ## Strategie ładowania
 
-Strategia ładowania odpowiada na pytanie: co zrobić z danymi, które już są w tabeli, gdy przychodzą nowe? Dobra strategia jest **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan tabeli. Bez tego każdy restart po awarii, backfill albo podwójne uruchomienie z harmonogramu tworzy duplikaty.
+Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą nowe. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan tabeli, więc restart, backfill ani podwójne uruchomienie nie tworzą duplikatów. Porównanie zakłada projekt z billingiem; kolumna „Sandbox” pokazuje, co działa tutaj (sprawdzone na żywo, listopad 2026).
 
-Porównanie zakłada projekt z billingiem, czyli dostępne są wszystkie opcje. Kolumna „Sandbox” mówi, co działa w tym projekcie (sprawdzone na żywo, listopad 2026).
-
-| Strategia | Jak w BigQuery | Idempotentna | Koszt jednego uruchomienia | Sandbox | Kiedy |
+| Strategia | Mechanizm w BigQuery | Idempotentna | Koszt uruchomienia | Sandbox | Kiedy |
 |---|---|---|---|---|---|
-| Pełne przeładowanie (full refresh) | pobierz całą historię z API, load z `WRITE_TRUNCATE` | tak | całe źródło: transfer z API + zapis całej tabeli | działa | małe tabele, słowniki, API bez filtra dat, źródło, które usuwa rekordy |
-| Dopisywanie (append) | load z `WRITE_APPEND` | **nie** — ponowne uruchomienie dubluje wiersze | tylko nowe dane | działa | niezmienne zdarzenia (logi, kliknięcia) + deduplikacja niżej, np. `QUALIFY ROW_NUMBER()` w modelu dbt |
-| Przepisanie tabeli z podmianą zakresu (**ten pipeline**) | query job: `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | odczyt i zapis **całej** tabeli — rośnie z jej rozmiarem | działa | małe tabele w sandboxie, gdzie DML jest zablokowany |
-| Nadpisanie partycji (partition overwrite) | tabela partycjonowana po dacie; load albo query job do `tabela$YYYYMMDD` z `WRITE_TRUNCATE`; w dbt: `insert_overwrite` | tak | tylko nadpisane partycje | działa, ale partycje starsze niż 60 dni wygasają od razu | dane dzienne z późnymi poprawkami: przeładuj ostatnie N dni (lookback) |
-| `MERGE` (upsert) | staging + `MERGE` po kluczu: `UPDATE` istniejących, `INSERT` nowych; w dbt: `merge` z `unique_key` (domyślna strategia) | tak | skan tabeli docelowej — mały, jeśli filtr w `ON`/`WHEN` przycina partycje; pełny, jeśli nie | **nie** — 403 | rekordy z kluczem, które mogą zmienić się w dowolnym miejscu historii: zamówienia ze statusem, CRM, CDC |
-| `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION; DELETE ... ; INSERT ... ; COMMIT TRANSACTION;` | tak | skan zakresu do usunięcia + zapis nowych | **nie** — to DML | podmiana zakresu, który nie pokrywa się z partycjami, np. w tabeli niepartycjonowanej |
+| Pełne przeładowanie | load całej historii, `WRITE_TRUNCATE` | tak | całe źródło | działa | małe tabele, słowniki, źródło usuwa rekordy |
+| Append | load, `WRITE_APPEND` | **nie** | nowe dane | działa | niezmienne zdarzenia + deduplikacja niżej (`QUALIFY ROW_NUMBER()` w dbt) |
+| Przepisanie z podmianą zakresu (**ten pipeline**) | `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | cała tabela | działa | małe tabele bez dostępu do DML |
+| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz: przeładuj ostatnie N dni |
+| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` (domyślna) | tak | skan celu; z filtrem partycji tylko jej część | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: zamówienia, CRM, CDC |
+| `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami |
 
 ### Jak wybrać
 
-1. **Czy całość jest mała i tania do pobrania?** Wybierz pełne przeładowanie — zero logiki stanu, zero ryzyka rozjazdu. Nie ma progu w GB. Granica przychodzi wtedy, gdy pobranie albo przepisanie całości nie mieści się w oknie uruchomienia, w limitach API albo w budżecie na skanowane bajty.
-2. **Czy zmiany dotyczą tylko ostatnich dni?** Wybierz nadpisanie partycji z lookbackiem. Przykład: GA4 [aktualizuje dzienne tabele eksportu](https://support.google.com/analytics/answer/9358801) przez 2 dni kalendarzowe plus dzień bieżący, więc codzienny job przeładowuje 3 ostatnie partycje. Platformy reklamowe działają podobnie: konwersje dopisują się wstecz przez okno atrybucji.
-3. **Czy dowolny rekord z historii może się zmienić i ma unikalny klucz?** Wybierz `MERGE`. Jeśli zmiany mieszczą się w znanym oknie dat, dodaj filtr partycji w warunku `ON` albo `WHEN` — wtedy BigQuery [przycina partycje](https://docs.cloud.google.com/bigquery/docs/using-dml-with-partitioned-tables) zamiast skanować całą tabelę.
-4. **Czy dane tylko przyrastają i nigdy się nie zmieniają?** Dopisywanie wystarczy, ale z deduplikacją niżej. Często bezpieczniej i tak nadpisywać partycję dnia — restart joba nie zrobi wtedy duplikatów.
+1. **Całość mała i tania?** Pełne przeładowanie. Progu w GB nie ma — granicą jest okno czasowe joba, limity API albo budżet na skanowane bajty.
+2. **Zmiany tylko w ostatnich dniach?** Nadpisanie partycji z lookbackiem. GA4 [poprawia dzienne tabele eksportu](https://support.google.com/analytics/answer/9358801) przez 2 dni plus dzień bieżący, więc job przeładowuje 3 partycje.
+3. **Dowolny rekord może się zmienić i ma klucz?** `MERGE`, z filtrem partycji w `ON`/`WHEN`, żeby BigQuery [przycinał skan](https://docs.cloud.google.com/bigquery/docs/using-dml-with-partitioned-tables).
+4. **Dane tylko przyrastają?** Append z deduplikacją albo — bezpieczniej przy restartach — nadpisanie partycji dnia.
 
-Limity, o które pytają na rozmowach, bo wychodzą dopiero przy skali ([quotas](https://docs.cloud.google.com/bigquery/quotas)):
-
-- `MERGE`, `UPDATE` i `DELETE` na tej samej tabeli: maks. 2 naraz, 20 w kolejce. Równoległe joby piszące do jednej tabeli przez DML czekają na siebie.
-- Load joby: 1500 na tabelę dziennie, wliczając nieudane.
-- Modyfikacje partycji: 30 000 na tabelę partycjonowaną po kolumnie dziennie.
+[Limity](https://docs.cloud.google.com/bigquery/quotas) widoczne dopiero przy skali: DML na jednej tabeli maks. 2 naraz i 20 w kolejce; 1500 load jobów na tabelę dziennie; 30 000 modyfikacji partycji na tabelę dziennie.
 
 ### Dlaczego tu przepisanie tabeli
 
-- Tabela jest mała: ok. 8 tys. wierszy rocznie. Całe uruchomienie z przepisaniem tabeli trwa ok. 7 s (zmierzone) i mieści się w darmowym limicie.
-- Sandbox blokuje DML, więc `MERGE` i transakcja odpadają.
-- Nadpisywanie partycji działa w sandboxie, ale sandbox ustawia partycjom wygasanie po 60 dniach od daty partycji. Tabela kursów partycjonowana po `effective_date` traciłaby od razu całą historię starszą niż 60 dni — test potwierdził, że takie partycje znikają natychmiast po zapisie.
-- Z billingiem: tabela partycjonowana po `effective_date` (miesięcznie, bo dzienna partycja z 32 wierszami to przerost) + `MERGE` albo nadpisanie partycji. Przy tej skali oba warianty są równie dobre.
+- Ok. 8 tys. wierszy rocznie; całe uruchomienie trwa ok. 7 s (zmierzone).
+- Sandbox blokuje DML, a partycjonowanie po dacie kasowałoby historię (pułapka niżej).
+- Z billingiem: partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji.
 
-**Ile pobierać przy codziennym uruchomieniu.** Skrypt pobiera z API tylko zakres `[--start, --end]`, nie całą historię. W BigQuery przepisuje całą tabelę, ale podmienia tylko ten zakres. Przy codziennym harmonogramie wystarczy `--start` = dziś minus 7 dni. Tydzień zapasu nic nie kosztuje, a łata dni, w które job nie ruszył (awaria, wyłączony komputer, długi weekend), bez ręcznego backfillu.
+Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie wystarczy `--start` = dziś minus 7 dni — tydzień zapasu łata dni, w które job nie ruszył.
 
 ## Konfiguracja krok po kroku
 
-1. Wykonaj kroki z sekcji „Wspólne środowisko” w [głównym README](../README.md).
-2. Utwórz projekt GCP, np. w Console → „Nowy projekt”. Billing nie jest potrzebny.
-3. Sprawdź, czy BigQuery API jest włączone: `gcloud services list --enabled --project=<projekt-gcp> | grep bigquery`. Jeśli nie, włącz je: `gcloud services enable bigquery.googleapis.com --project=<projekt-gcp>`.
-4. Uruchom pobieranie:
-   ```
-   uv run python nbp/ingest.py --project <projekt-gcp> --start 2025-01-01
-   ```
-   `--end` domyślnie przyjmuje dzisiejszą datę, `--dataset` domyślnie `raw_nbp`. Skrypt sam tworzy dataset i tabele, jeśli ich nie ma.
-5. Sprawdź duplikaty. Obie liczby muszą być równe:
+1. Wykonaj „Wspólne środowisko” z [głównego README](../README.md).
+2. Utwórz projekt GCP (billing niepotrzebny) i sprawdź BigQuery API: `gcloud services list --enabled --project=<projekt-gcp> | grep bigquery`. Brak → `gcloud services enable bigquery.googleapis.com --project=<projekt-gcp>`.
+3. Uruchom: `uv run python nbp/ingest.py --project <projekt-gcp> --start 2025-01-01`. Domyślnie `--end` = dziś, `--dataset` = `raw_nbp`; dataset i tabele powstają same.
+4. Sprawdź duplikaty — obie liczby muszą być równe:
    ```
    bq query --use_legacy_sql=false 'SELECT COUNT(*), COUNT(DISTINCT FORMAT("%t|%s", effective_date, currency_code)) FROM raw_nbp.exchange_rates_a'
    ```
-6. Uruchom testy: `uv run pytest nbp`.
+5. Testy: `uv run pytest nbp`.
 
 ## Pułapki
 
-- **Projekt rozliczeniowy ADC wskazuje usunięty projekt** → błąd `400 ... Project 'projects/<stary-projekt>' not found or deleted`, nawet jeśli `--project` jest poprawny. Napraw komendą `gcloud auth application-default set-quota-project <projekt-gcp>`.
-- **Sandbox:** tabele wygasają po 60 dniach od utworzenia. Po wygaśnięciu uruchom skrypt ponownie z pełnym zakresem dat.
-- **Sandbox i partycje:** partycja wygasa 60 dni po swojej dacie, nie po dacie zapisu. Historyczne dane w tabeli partycjonowanej po dacie znikają od razu.
-- **`BGN` od 2026 roku:** przeliczenie po kursie z tego samego dnia nie znajdzie kursu lewa. Etap 6 musi to obsłużyć.
+- **Quota project ADC wskazuje usunięty projekt** → `400 ... Project 'projects/<stary-projekt>' not found or deleted` mimo poprawnego `--project`. Fix: `gcloud auth application-default set-quota-project <projekt-gcp>`.
+- **Sandbox:** tabela wygasa 60 dni po utworzeniu — wtedy załaduj pełny zakres od nowa. Partycja wygasa 60 dni po **swojej dacie**, więc historia w tabeli partycjonowanej po dacie znika od razu po zapisie.
+- **`BGN` od 2026:** brak kursu lewa — etap 6 musi to obsłużyć.
