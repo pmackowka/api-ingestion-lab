@@ -65,13 +65,13 @@ Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą now
 - Sandbox blokuje DML, a partycjonowanie po dacie kasowałoby historię (pułapka niżej).
 - Z billingiem: partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji. Przy tej skali oba warianty są równie dobre; partycje dzienne z 32 wierszami to przerost.
 
-Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie wystarczy `--start` = dziś minus 7 dni — tydzień zapasu nic nie kosztuje, a łata dni, w które job nie ruszył (awaria, wyłączony komputer, długi weekend), bez ręcznego backfillu.
+Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie użyj `--lookback-days 7` zamiast `--start` — tydzień zapasu nic nie kosztuje, a łata dni, w które job nie ruszył (awaria, wyłączony komputer, długi weekend), bez ręcznego backfillu.
 
 ## Konfiguracja krok po kroku
 
 1. Wykonaj „Wspólne środowisko” z [głównego README](../README.md).
 2. Utwórz projekt GCP (billing niepotrzebny) i sprawdź BigQuery API: `gcloud services list --enabled --project=<projekt-gcp> | grep bigquery`. Brak → `gcloud services enable bigquery.googleapis.com --project=<projekt-gcp>`.
-3. Uruchom: `uv run python nbp/ingest.py --project <projekt-gcp> --start 2025-01-01`. Domyślnie `--end` = dziś, `--dataset` = `raw_nbp`; dataset i tabele powstają same.
+3. Uruchom backfill: `uv run python nbp/ingest.py --project <projekt-gcp> --start 2025-01-01`. Przy harmonogramie zamiast `--start` podaj `--lookback-days 7`. Domyślnie `--end` = dziś, `--dataset` = `raw_nbp`; dataset i tabele powstają same.
 4. Sprawdź duplikaty — obie liczby muszą być równe:
    ```
    bq query --use_legacy_sql=false 'SELECT COUNT(*), COUNT(DISTINCT FORMAT("%t|%s", effective_date, currency_code)) FROM raw_nbp.exchange_rates_a'
@@ -82,4 +82,5 @@ Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie wys
 
 - **Quota project ADC wskazuje usunięty projekt** → `400 ... Project 'projects/<stary-projekt>' not found or deleted` mimo poprawnego `--project`. Fix: `gcloud auth application-default set-quota-project <projekt-gcp>`.
 - **Sandbox:** tabela wygasa 60 dni po utworzeniu — wtedy załaduj pełny zakres od nowa. Partycja wygasa 60 dni po **swojej dacie**, więc historia w tabeli partycjonowanej po dacie znika od razu po zapisie.
+- **Godzina uruchomienia:** NBP publikuje tabelę A w dni robocze między 11:45 a 12:15 czasu polskiego ([terminy](https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/informacja-o-terminach-publikacji-kursow-walut/)). Uruchomienie wcześniej nie złapie kursu z bieżącego dnia — lookback dociągnie go następnego dnia.
 - **`BGN` od 2026:** brak kursu lewa — etap 6 musi to obsłużyć.

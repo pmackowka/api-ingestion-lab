@@ -1,7 +1,8 @@
 """Kursy średnie NBP (tabela A) -> BigQuery.
 
 Uruchomienie:
-    uv run python nbp/ingest.py --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31
+    uv run python nbp/ingest.py --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31   # backfill
+    uv run python nbp/ingest.py --project <projekt-gcp> --lookback-days 7                    # harmonogram
 """
 
 import argparse
@@ -163,14 +164,31 @@ def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, 
     client.query(rewrite_sql, job_config=query_config).result()
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Czyta argumenty; początek zakresu podajesz datą (--start) albo liczbą dni wstecz (--lookback-days).
+
+    Po co --lookback-days: harmonogram (cron, Cloud Run job) ma stałe argumenty, więc nie wpisze
+    "dziś minus 7 dni" jako daty. Liczba dni jest stała, a data startu liczy się przy każdym uruchomieniu.
+    """
     parser = argparse.ArgumentParser(description="Kursy NBP (tabela A) -> BigQuery")
     parser.add_argument("--project", required=True, help="ID projektu GCP")
     parser.add_argument("--dataset", default="raw_nbp")
-    parser.add_argument("--start", required=True, type=date.fromisoformat)
-    parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     # type=date.fromisoformat: zła data (np. 2026-13-01) kończy się błędem argparse, zanim ruszy API.
-    args = parser.parse_args()
+    parser.add_argument("--end", type=date.fromisoformat, default=date.today())
+    # Dokładnie jedno z dwóch: ręczny backfill od daty albo automatyczny lookback.
+    start_group = parser.add_mutually_exclusive_group(required=True)
+    start_group.add_argument("--start", type=date.fromisoformat)
+    start_group.add_argument("--lookback-days", type=int, help="start = end minus tyle dni")
+    args = parser.parse_args(argv)
+    if args.lookback_days is not None:
+        if args.lookback_days < 0:
+            parser.error("--lookback-days nie może być ujemne")
+        args.start = args.end - timedelta(days=args.lookback_days)
+    return args
+
+
+def main() -> None:
+    args = parse_args()
 
     # Kroki 1-3: pobranie i spłaszczenie wszystkich okien, zanim cokolwiek trafi do BigQuery.
     # Błąd API w dowolnym oknie przerywa skrypt, zanim cokolwiek zmieni się w tabeli.

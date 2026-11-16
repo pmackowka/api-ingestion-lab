@@ -20,12 +20,14 @@ w etapie 6), nie zobowiązanie. Planowany krok: przegląd ogłoszeń o pracę dl
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
-Stan na 2026-11-08: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
+Stan na 2026-11-16: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
 
 ## Struktura
 
 - `README.md` — indeks połączeń, porównanie miejsc uruchamiania (automatyzacja) + wspólne środowisko.
-- `<system>/` — jeden folder na źródło: `ingest.py`, `test_ingest.py`, `README.md`.
+- `<system>/` — jeden folder na źródło, będący pakietem: `__init__.py`, `ingest.py`, `test_ingest.py`, `README.md`.
+  Testy importują `from <system>.ingest import ...` — bez `__init__.py` dwa pliki `test_ingest.py`
+  w różnych folderach wywracają pytest (`import file mismatch`).
 - `<system>/README.md` — konfiguracja krok po kroku: źródło i jego sprawdzone zachowanie,
   jak działa kod, schemat tabeli docelowej, konfiguracja, pułapki.
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
@@ -37,7 +39,8 @@ Stan na 2026-11-08: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich fold
 uv sync                                                            # zależności
 uv run pytest                                                      # wszystkie testy (to samo co CI)
 uv run pytest nbp                                                  # testy jednego folderu
-uv run python nbp/ingest.py --project api-ingestion-lab-bq --start 2025-01-01   # ingest NBP
+uv run python nbp/ingest.py --project api-ingestion-lab-bq --start 2025-01-01   # backfill NBP
+uv run python nbp/ingest.py --project api-ingestion-lab-bq --lookback-days 7     # przyrost NBP
 ```
 
 Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
