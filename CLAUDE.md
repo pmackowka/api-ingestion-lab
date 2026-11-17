@@ -16,6 +16,8 @@ Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to
 GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
 dane demo), model w dbt. Wybór wynika z przeglądu ogłoszeń DE z dbt z 2026-11-17 (sekcja w `README.md`).
 Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
+Złączenie GA4 z CRM jest na agregatach `data × źródło` (Data API nie ma użytkowników, strona nie ma formularza);
+syntetyczne leady dziedziczą rozkład źródeł i wolumen kliknięć w kontakt z prawdziwego GA4.
 
 ## Plan i stan
 
