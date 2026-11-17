@@ -2,6 +2,18 @@
 
 Pobiera kursy średnie NBP z publicznego API i zapisuje je w BigQuery. Kursy przydadzą się w etapie 6 do przeliczania przychodów z EUR i USD na PLN.
 
+## Przykładowe uruchomienia
+
+Każde uruchomienie podmienia w tabeli tylko zakres `[--start, --end]`; domyślnie `--end` = dziś. Skrypt nie sprawdza, do jakiego dnia tabela ma już dane — po przerwie podaj `--start`.
+
+| Komenda (`uv run python nbp/ingest.py --project <projekt-gcp> …`) | Co robi |
+|---|---|
+| `--start 2025-01-01` | Backfill: ładuje całą historię od 2025 roku, np. przy pierwszym uruchomieniu albo po wygaśnięciu tabeli w sandboxie. |
+| `--lookback-days 7` | Codzienny przyrost: podmienia ostatnie 8 dni kalendarzowych (dziś i 7 wstecz), łatając dzień czy dwa przestoju. |
+| `--start 2026-11-17` | Nadrabianie po dłuższej przerwie: ładuje wszystko od dnia po ostatnim załadowanym, więc nie zostaje luka. |
+| `--start 2026-01-01 --end 2026-03-31` | Ponowne załadowanie jednego okresu (tu I kwartał), np. po wykryciu błędu w danych; reszta tabeli zostaje bez zmian. |
+| `--dataset raw_nbp_test --start 2026-11-01` | Ładowanie do osobnego datasetu do eksperymentów, bez ruszania `raw_nbp`. |
+
 ## Źródło
 
 - Endpoint: `GET https://api.nbp.pl/api/exchangerates/tables/A/{startDate}/{endDate}/`, nagłówek `Accept: application/json`. Dokumentacja: https://api.nbp.pl/
