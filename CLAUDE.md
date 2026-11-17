@@ -21,6 +21,9 @@ Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
 Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
+Następny krok: etap 2 (`ga4/`, GA4 Data API dla pmdata.pl). Do zrobienia na start: dostęp konta ADC albo konta
+usługi do usługi GA4 i jej property ID od Piotra. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+`MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 
 ## Struktura
 
