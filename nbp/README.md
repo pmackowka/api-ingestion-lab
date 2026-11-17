@@ -18,9 +18,54 @@ Zachowanie API sprawdzone na żywo (listopad 2026):
 
 Od 2026-01-02 tabela A ma 32 waluty zamiast 33. Ostatni kurs `BGN` (lew bułgarski) pochodzi z 2025-12-31.
 
-## Kod
+## Jak działa jedno uruchomienie
 
-Cały pipeline jest w `ingest.py`. Każda funkcja i każdy blok ma komentarz: co robi, po co i dlaczego tak. Kolejność czytania: `main` → `split_windows` → `fetch_window` → `to_rows` → `load_to_bigquery`.
+Cały pipeline jest w `ingest.py`; każdy blok ma komentarz: co robi, po co i dlaczego tak. SQL z kroku 4b też tam jest — jako tekst, który Python wysyła przez `client.query()`, a wykonuje BigQuery.
+
+Przykład: `--lookback-days 7` uruchomione 17.11.2026, tabela ma dane od 02.01.2025 do 14.11.2026, a NBP poprawiło kurs z 12.11.
+
+```
+ PYTHON (Twój Mac / runner)              BIGQUERY (serwery Google)
+ ──────────────────────────              ─────────────────────────────────────────
+
+ 1. parse_args + split_windows:
+    start = 17.11 − 7 = 10.11
+    end   = 17.11  (8 dni, jedno okno)
+
+ 2. fetch_window (API NBP)
+    → dni z notowaniami 10–17.11
+      (12.11 już w nowej wersji)
+
+ 3. to_rows: spłaszczenie
+    → 5 dni × 32 waluty = 160 wierszy
+      (11.11 święto, 15–16.11 weekend)
+
+ 4a. load_table_from_json ─────────────▶ _staging_exchange_rates_a
+     (WRITE_TRUNCATE)                    ┌───────────────────────┐
+                                         │ 10.11 … 17.11  (nowe) │  poprzednia zawartość
+                                         └───────────────────────┘  stagingu wyrzucona
+
+ 4b. client.query(rewrite_sql) ────────▶ wykonanie SQL:
+
+                exchange_rates_a (przed)              _staging
+                ┌──────────────────────┐              ┌───────────────┐
+                │ 02.01.2025 … 09.11   │──┐           │ 10.11 … 17.11 │
+                │ 10.11 … 14.11 (stare)│✗ │           └───────┬───────┘
+                └──────────────────────┘  │ WHERE NOT BETWEEN │
+                                          ▼                   ▼
+                                ┌──────────────────────────────────┐
+                                │ UNION ALL = sklejenie pod sobą   │
+                                │ 02.01.2025 … 09.11  (z tabeli)   │
+                                │ 10.11 … 17.11       (ze stagingu)│
+                                └────────────────┬─────────────────┘
+                                                 │ WRITE_TRUNCATE_DATA
+                                                 ▼
+                                exchange_rates_a (po) — zapisana od nowa w całości:
+                                historia skopiowana bez zmian, 10–17.11 wymienione
+```
+
+- Treść zmienia się tylko w zakresie `[start, end]`, ale BigQuery zapisuje całą tabelę od nowa — stąd koszt „cała tabela” w porównaniu strategii niżej. Historia pochodzi ze starej wersji tabeli, nie z API.
+- Bez filtra `NOT BETWEEN` dni 10–14.11 byłyby w tabeli dwa razy; bez części `SELECT … FROM exchange_rates_a` zostałby sam staging, czyli 8 dni.
 
 ## Tabela docelowa
 
