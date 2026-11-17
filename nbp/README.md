@@ -1,6 +1,6 @@
 # NBP — kursy średnie walut (tabela A) → BigQuery
 
-Pobiera kursy średnie NBP z publicznego API i zapisuje je w BigQuery. Kursy przydadzą się w etapie 6 do przeliczania przychodów z EUR i USD na PLN.
+Pobiera kursy średnie NBP z publicznego API i zapisuje je w BigQuery. Kursy przydadzą się w etapie 7 do przeliczania przychodów z EUR i USD na PLN.
 
 ## Przykładowe uruchomienia
 
@@ -149,4 +149,4 @@ Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie uż
 - **Quota project ADC wskazuje usunięty projekt** → `400 ... Project 'projects/<stary-projekt>' not found or deleted` mimo poprawnego `--project`. Fix: `gcloud auth application-default set-quota-project <projekt-gcp>`.
 - **Sandbox:** tabela wygasa 60 dni po utworzeniu — wtedy załaduj pełny zakres od nowa. Partycja wygasa 60 dni po **swojej dacie**, więc historia w tabeli partycjonowanej po dacie znika od razu po zapisie.
 - **Godzina uruchomienia:** NBP publikuje tabelę A w dni robocze między 11:45 a 12:15 czasu polskiego ([terminy](https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/informacja-o-terminach-publikacji-kursow-walut/)). Uruchomienie wcześniej nie złapie kursu z bieżącego dnia — lookback dociągnie go następnego dnia.
-- **`BGN` od 2026:** brak kursu lewa — etap 6 musi to obsłużyć.
+- **`BGN` od 2026:** brak kursu lewa — etap 7 musi to obsłużyć.

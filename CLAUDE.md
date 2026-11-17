@@ -12,17 +12,17 @@ Cel: nauka mechanizmów ingestu na realnych i realistycznych źródłach — lim
 uwierzytelnianie, ponowienia, idempotentny zapis. Kod ma działać, a komentarze po polsku mają
 tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
 
-Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): GA4 i Search Console
-z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
+Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): pogoda z Open-Meteo,
+GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
 dane demo), model w dbt. Wybór wynika z przeglądu ogłoszeń DE z dbt z 2026-11-17 (sekcja w `README.md`).
 Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
-Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
-Następny krok: etap 2 (`ga4/`, GA4 Data API dla pmdata.pl). Do zrobienia na start: dostęp konta ADC albo konta
-usługi do usługi GA4 i jej property ID od Piotra. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–7 są planowane, ich foldery jeszcze nie istnieją.
+Następny krok: etap 2 (`weather/`, Open-Meteo — bez klucza, ten sam wzorzec co NBP), potem etap 3 (`ga4/`,
+GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4 i property ID od Piotra). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 
 ## Struktura

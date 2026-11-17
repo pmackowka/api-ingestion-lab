@@ -40,7 +40,7 @@ def split_windows(start: date, end: date, window_days: int = WINDOW_DAYS) -> lis
     """Krok 1: dzieli [start, end] (obie granice włącznie) na sąsiadujące okna po maks. window_days dni.
 
     Po co: API odrzuca zakres dłuższy niż 93 dni, a chcemy móc załadować np. kilka lat jednym
-    uruchomieniem. Ten sam wzorzec (pętla po kawałkach zakresu) wraca przy paginacji w etapie 2.
+    uruchomieniem. Ten sam wzorzec (pętla po kawałkach zakresu) wraca przy paginacji w etapie 3 (GA4).
     """
     if start > end:
         raise ValueError(f"start {start} jest po end {end}")

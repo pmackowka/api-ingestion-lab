@@ -2,7 +2,7 @@
 
 Pobieranie danych z API (głównie REST) w Pythonie i ładowanie ich do BigQuery. Projekt do nauki inżynierii danych: każde połączenie to osobny, niezależny pipeline w swoim folderze, z komentarzami po polsku, które tłumaczą mechanizm.
 
-Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN. Wybór źródeł wynika z przeglądu ogłoszeń z 2026-11-17 (niżej).
+Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda). Wybór źródeł wynika z przeglądu ogłoszeń z 2026-11-17 (niżej).
 
 ## Połączenia
 
@@ -11,15 +11,16 @@ Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to inde
 | Etap | System | Folder | Status | Dane i dostęp | Czego uczy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
 |:-:|---|---|---|---|---|
 | 1 | [API NBP](https://api.nbp.pl/) — kursy walut, tabela A | [`nbp/`](nbp/README.md) | działa | prawdziwe<br>(API otwarte) | • GET i JSON<br>• limit 93 dni → dzielenie zakresu na okna<br>• idempotentny zapis do BigQuery |
-| 2 | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl | `ga4/` | planowany | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
-| 3 | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl | `search_console/` | planowany | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
-| 4 | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale | `hubspot/` | planowany | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
-| 5 | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury | `odoo/` | planowany | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
-| 6 | Model w dbt na BigQuery | `model/` | planowany | z etapów 1–5 | • warstwy staging → intermediate → marty<br>• lead-to-cash: sesja → lead → deal → faktura<br>• waluta (kurs NBP), strefa czasowa, testy dbt |
+| 2 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) — pogoda historyczna (archiwum) | `weather/` | planowany | prawdziwe<br>(API otwarte, użytek niekomercyjny) | • GET bez klucza, wiele lokalizacji w jednym zapytaniu<br>• strefa czasowa i granice doby (`timezone`)<br>• dane korygowane wstecz: reanaliza ERA5 z opóźnieniem 5 dni → lookback<br>• limit 10 000 wywołań dziennie |
+| 3 | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl | `ga4/` | planowany | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
+| 4 | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl | `search_console/` | planowany | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
+| 5 | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale | `hubspot/` | planowany | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
+| 6 | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury | `odoo/` | planowany | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
+| 7 | Model w dbt na BigQuery | `model/` | planowany | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash: sesja → lead → deal → faktura<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
 
 **Dane i dostęp** — co faktycznie trafi do BigQuery i skąd:
 
-- *prawdziwe (API otwarte)* — produkcyjne dane źródła, dostępne dla każdego bez klucza. NBP to produkcyjne API, nie sandbox.
+- *prawdziwe (API otwarte)* — produkcyjne dane źródła, dostępne dla każdego bez klucza. NBP to produkcyjne API, nie sandbox. Open-Meteo za darmo tylko do użytku niekomercyjnego. Alternatywa IMGW (`danepubliczne.imgw.pl/api/data/synop`) zwraca tylko ostatni pomiar, bez historii — nie nadaje się do backfillu.
 - *prawdziwe (własna usługa)* — realny ruch z pmdata.pl. Strona to nie sklep, więc „konwersją” jest kontakt, nie zakup.
 - *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types) (darmowe, wygasa po 90 dniach bez wywołań API). Dane wgrywa nasz skrypt.
 - *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie; dane demo Odoo plus dogenerowane rekordy.
@@ -49,9 +50,9 @@ Skrypty z tego repo uruchamia się ręcznie. W pracy ten sam kod musi ruszać sa
 
 Dzienny potok etapu 6: przychód w PLN przypisany do źródła ruchu. Jeden DAG, harmonogram codziennie rano:
 
-1. **Równolegle ingesty** jako Cloud Run joby (`CloudRunExecuteJobOperator`): NBP, GA4, Search Console, HubSpot i Odoo. Każdy z lookbackiem kilku dni (dla NBP: `--lookback-days 7`) i idempotentnym zapisem, więc ponowienie zadania jest bezpieczne.
+1. **Równolegle ingesty** jako Cloud Run joby (`CloudRunExecuteJobOperator`): NBP, pogoda, GA4, Search Console, HubSpot i Odoo. Każdy z lookbackiem kilku dni (dla NBP: `--lookback-days 7`) i idempotentnym zapisem, więc ponowienie zadania jest bezpieczne.
 2. **Ponowienia per źródło.** HubSpot przy przekroczeniu limitu zwraca 429 — ingest czeka i ponawia, a Airflow pilnuje timeoutu i liczby prób, nie blokując pozostałych źródeł.
-3. **`dbt build`** dopiero gdy wszystkie ingesty się powiodą: modele łączą sesję z leadem, dealem i fakturą, przeliczają EUR na PLN kursem NBP i wyrównują strefy czasowe.
+3. **`dbt build`** dopiero gdy wszystkie ingesty się powiodą: modele łączą sesję z leadem, dealem i fakturą, przeliczają EUR na PLN kursem NBP dołączają pogodę jako wymiar dnia i wyrównują strefy czasowe.
 4. **Testy dbt** jako bramka: np. faktura bez dealu albo deal bez kontaktu powyżej progu zatrzymuje potok przed publikacją.
 5. **Alert przy porażce** dowolnego zadania. Zadania zależne dostają stan `upstream_failed` i nie ruszają, więc nic nie liczy się na niepełnych danych. Po naprawie czyścisz nieudane zadanie razem z zadaniami zależnymi (Clear → Downstream) i Airflow uruchamia je ponownie — samo się to nie wznowi.
 
