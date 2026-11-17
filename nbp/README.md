@@ -116,37 +116,24 @@ Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą now
 | `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` (domyślna) | tak | skan celu; z filtrem partycji tylko jej część | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: zamówienia, CRM, CDC |
 | `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami |
 
-### Jak wybrać
+### Przepisanie z podmianą zakresu — na czym polega i dlaczego tutaj
 
-1. **Całość mała i tania?** Pełne przeładowanie. Progu w GB nie ma — granicą jest okno czasowe joba, limity API albo budżet na skanowane bajty.
-2. **Zmiany tylko w ostatnich dniach?** Nadpisanie partycji z lookbackiem. GA4 [poprawia dzienne tabele eksportu](https://support.google.com/analytics/answer/9358801) przez 2 dni plus dzień bieżący, więc job przeładowuje 3 partycje. Platformy reklamowe działają podobnie: konwersje dopisują się wstecz przez okno atrybucji.
-3. **Dowolny rekord może się zmienić i ma klucz?** `MERGE`, z filtrem partycji w `ON`/`WHEN`, żeby BigQuery [przycinał skan](https://docs.cloud.google.com/bigquery/docs/using-dml-with-partitioned-tables).
-4. **Dane tylko przyrastają?** Append z deduplikacją albo — bezpieczniej przy restartach — nadpisanie partycji dnia.
+**Mechanizm.** Każde uruchomienie buduje tabelę od nowa z dwóch części: wierszy, które już w niej są **poza** zakresem `[start, end]`, i świeżych wierszy z API **za** ten zakres (staging). Wynik zastępuje tabelę w jednym query jobie (diagram w „Jak działa jedno uruchomienie”). Treść zmienia się tylko w zakresie; reszta jest przepisywana bez zmian ze starej wersji tabeli, nie pobierana ponownie z API.
 
-[Limity](https://docs.cloud.google.com/bigquery/quotas) widoczne dopiero przy skali: DML na jednej tabeli maks. 2 naraz i 20 w kolejce, więc równoległe joby piszące przez `MERGE` czekają na siebie; 1500 load jobów na tabelę dziennie; 30 000 modyfikacji partycji na tabelę dziennie.
+**Gwarancje.**
+- Idempotencja: stare wiersze z zakresu są odfiltrowane (`NOT BETWEEN`), więc każda para `(effective_date, currency_code)` z zakresu pochodzi wyłącznie ze stagingu — ponowne uruchomienie nie tworzy duplikatów.
+- Atomowość: BigQuery podmienia tabelę dopiero po zakończeniu zapytania. Błąd w połowie zostawia poprzednią wersję w całości.
+- Usunięcia ze źródła: wiersz z zakresu, którego API już nie zwraca, znika z tabeli — `MERGE` bez klauzuli `WHEN NOT MATCHED BY SOURCE` by go zostawił.
 
-### Dlaczego tu przepisanie tabeli
+**Czy to typowe?** Nie jako nazwa — to robocza nazwa tego repo. Jako idea: tak, to podmiana zakresu, ta sama co w nadpisywaniu partycji (dbt `insert_overwrite`), tylko na poziomie całej tabeli zamiast partycji. W produkcji z billingiem standardem są `MERGE` albo nadpisanie partycji; przepisanie całej tabeli spotkasz przy małych tabelach referencyjnych (kursy, słowniki, kalendarze) i tam, gdzie DML jest niedostępny.
 
-- Ok. 8 tys. wierszy rocznie; całe uruchomienie trwa ok. 7 s (zmierzone).
-- Sandbox blokuje DML, a partycjonowanie po dacie kasowałoby historię (pułapka niżej).
-- Z billingiem: partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji. Przy tej skali oba warianty są równie dobre; partycje dzienne z 32 wierszami to przerost.
+**Dlaczego tutaj.**
+1. Sandbox odrzuca DML (`MERGE`, `DELETE`, `INSERT`) błędem 403. Query job z tabelą docelową to nie DML, więc działa.
+2. Nadpisanie partycji odpada: w sandboxie partycja wygasa 60 dni po **swojej dacie**, więc tabela partycjonowana po `effective_date` traci historię od razu po zapisie (sprawdzone na żywo).
+3. Pełne przeładowanie z API też by działało, ale przy każdym uruchomieniu pobierałoby całą historię oknami po 93 dni. Przepisanie pobiera z API tylko zakres — historię bierze z własnej tabeli.
+4. Skala to umożliwia: ok. 8 tys. wierszy rocznie, całe uruchomienie trwa ok. 7 s (zmierzone).
 
-Skrypt pobiera z API tylko `[--start, --end]`. Przy codziennym harmonogramie użyj `--lookback-days 7` zamiast `--start` — tydzień zapasu nic nie kosztuje, a łata dni, w które job nie ruszył (awaria, wyłączony komputer, długi weekend), bez ręcznego backfillu.
-
-## Konfiguracja krok po kroku
-
-1. Wykonaj „Wspólne środowisko” z [głównego README](../README.md).
-2. Utwórz projekt GCP (billing niepotrzebny) i sprawdź BigQuery API: `gcloud services list --enabled --project=<projekt-gcp> | grep bigquery`. Brak → `gcloud services enable bigquery.googleapis.com --project=<projekt-gcp>`.
-3. Uruchom backfill: `uv run python nbp/ingest.py --project <projekt-gcp> --start 2025-01-01`. Przy harmonogramie zamiast `--start` podaj `--lookback-days 7`. Domyślnie `--end` = dziś, `--dataset` = `raw_nbp`; dataset i tabele powstają same.
-4. Sprawdź duplikaty — obie liczby muszą być równe:
-   ```
-   bq query --use_legacy_sql=false 'SELECT COUNT(*), COUNT(DISTINCT FORMAT("%t|%s", effective_date, currency_code)) FROM raw_nbp.exchange_rates_a'
-   ```
-5. Testy: `uv run pytest nbp`.
-
-## Pułapki
-
-- **Quota project ADC wskazuje usunięty projekt** → `400 ... Project 'projects/<stary-projekt>' not found or deleted` mimo poprawnego `--project`. Fix: `gcloud auth application-default set-quota-project <projekt-gcp>`.
-- **Sandbox:** tabela wygasa 60 dni po utworzeniu — wtedy załaduj pełny zakres od nowa. Partycja wygasa 60 dni po **swojej dacie**, więc historia w tabeli partycjonowanej po dacie znika od razu po zapisie.
-- **Godzina uruchomienia:** NBP publikuje tabelę A w dni robocze między 11:45 a 12:15 czasu polskiego ([terminy](https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/informacja-o-terminach-publikacji-kursow-walut/)). Uruchomienie wcześniej nie złapie kursu z bieżącego dnia — lookback dociągnie go następnego dnia.
-- **`BGN` od 2026:** brak kursu lewa — etap 7 musi to obsłużyć.
+**Koszt i ograniczenia.**
+- Każde uruchomienie skanuje i zapisuje całą tabelę, także przy `--lookback-days 7` — koszt rośnie z historią, nie z zakresem. Przy milionach wierszy to przestaje mieć sens.
+- Dwa równoległe uruchomienia czytają tę samą starą wersję, więc wygrywa to, które skończy później, a zmiany pierwszego przepadają. Przy jednym harmonogramie dziennym nie występuje.
+- Z billingiem zmieniłbym na partycje miesięczne po `effective_date` + `MERGE` albo nadpisanie partycji; partycje dzienne z 32 wierszami to przerost.

@@ -31,8 +31,8 @@ GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi 
 - `<system>/` — jeden folder na źródło, będący pakietem: `__init__.py`, `ingest.py`, `test_ingest.py`, `README.md`.
   Testy importują `from <system>.ingest import ...` — bez `__init__.py` dwa pliki `test_ingest.py`
   w różnych folderach wywracają pytest (`import file mismatch`).
-- `<system>/README.md` — konfiguracja krok po kroku: źródło i jego sprawdzone zachowanie,
-  jak działa kod, schemat tabeli docelowej, konfiguracja, pułapki.
+- `<system>/README.md` — przykładowe uruchomienia, źródło i jego sprawdzone zachowanie,
+  jak działa jedno uruchomienie (diagram), schemat tabeli docelowej, strategia ładowania i jej uzasadnienie.
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP.
 
