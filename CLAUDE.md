@@ -17,7 +17,7 @@ GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane s
 dane demo), model w dbt. Wybór wynika z przeglądu ogłoszeń DE z dbt z 2026-11-17 (sekcja w `README.md`).
 Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 Złączenie GA4 z CRM jest na agregatach `data × źródło` (Data API nie ma użytkowników, strona nie ma formularza);
-syntetyczne leady dziedziczą rozkład źródeł i wolumen kliknięć w kontakt z prawdziwego GA4.
+syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen z kliknięć w kontakt.
 
 ## Plan i stan
 
