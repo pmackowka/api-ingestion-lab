@@ -2,7 +2,7 @@
 
 Pobieranie danych z API (głównie REST) w Pythonie i ładowanie ich do BigQuery. Projekt do nauki inżynierii danych: każde połączenie to osobny, niezależny pipeline w swoim folderze, z komentarzami po polsku, które tłumaczą mechanizm.
 
-Kierunek: dane, z którymi pracuje analityk internetowy — ekosystem Google, marketing, reklama. Obecne etapy to pierwsza propozycja; kolejne źródła wybierzemy na podstawie ogłoszeń o pracę dla inżynierów danych w Polsce (z dbt w wymaganiach) i typów danych, które w nich się powtarzają.
+Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN. Wybór źródeł wynika z przeglądu ogłoszeń z 2026-11-17 (niżej).
 
 ## Połączenia
 
@@ -11,18 +11,26 @@ Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to inde
 | Etap | System | Folder | Status | Dane i dostęp | Czego uczy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
 |:-:|---|---|---|---|---|
 | 1 | [API NBP](https://api.nbp.pl/) — kursy walut, tabela A | [`nbp/`](nbp/README.md) | działa | prawdziwe<br>(API otwarte) | • GET i JSON<br>• limit 93 dni → dzielenie zakresu na okna<br>• idempotentny zapis do BigQuery |
-| 2 | Atrapa API raportowego SSP (własna, FastAPI) | `ssp_mock/` | planowany | syntetyczne<br>(brak sandboxa) | • uwierzytelnianie tokenem<br>• raport asynchroniczny: zlecenie → status → pobranie<br>• paginacja, 429 i ponowienia<br>• dane w UTC i EUR |
-| 3 | [Google Ad Manager API](https://developers.google.com/ad-manager/api/beta/reports) (REST, beta) | `gam/` | planowany | puste<br>(sandbox: sieć testowa) | • OAuth / konto usługi<br>• raporty GAM |
-| 4 | [Prebid Server](https://docs.prebid.org/prebid-server/overview/prebid-server-overview.html) + atrapa biddera | `prebid/` | planowany | syntetyczne<br>(open source lokalnie) | • OpenRTB: bid request / bid response<br>• logi aukcji jako źródło danych |
-| 5 | [AppsFlyer Pull API](https://dev.appsflyer.com/hc/reference/raw_data_pull_api_tokenv2-overview) (raw data) | `appsflyer/` | planowany | syntetyczne<br>(brak sandboxa) | • bearer token<br>• odpowiedź w CSV<br>• strefa czasowa aplikacji<br>• limit 1 mln wierszy na wywołanie |
-| 6 | Model w BigQuery | `model/` | planowany | z etapów 1–5 | • uzgadnianie GAM vs SSP<br>• strefa czasowa, waluta (kurs NBP)<br>• brutto vs netto |
+| 2 | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl | `ga4/` | planowany | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
+| 3 | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl | `search_console/` | planowany | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
+| 4 | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale | `hubspot/` | planowany | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
+| 5 | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury | `odoo/` | planowany | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
+| 6 | Model w dbt na BigQuery | `model/` | planowany | z etapów 1–5 | • warstwy staging → intermediate → marty<br>• lead-to-cash: sesja → lead → deal → faktura<br>• waluta (kurs NBP), strefa czasowa, testy dbt |
 
 **Dane i dostęp** — co faktycznie trafi do BigQuery i skąd:
 
 - *prawdziwe (API otwarte)* — produkcyjne dane źródła, dostępne dla każdego bez klucza. NBP to produkcyjne API, nie sandbox.
-- *puste (sandbox: sieć testowa)* — prawdziwe API, ale darmowa [sieć testowa GAM](https://developers.google.com/ad-manager/api/beta/test-networks) nie serwuje reklam, więc raporty z danymi serwowania mają 0 wierszy.
-- *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie, ruch generuje atrapa.
-- *syntetyczne (brak sandboxa)* — API raportowe SSP (Magnite, PubMatic, Index Exchange) i AppsFlyer są dostępne tylko dla klientów platformy. Kod powstaje z oficjalnej dokumentacji, a testuje go lokalna atrapa, która odtwarza udokumentowany kontrakt: endpointy, uwierzytelnianie, format odpowiedzi i kody błędów.
+- *prawdziwe (własna usługa)* — realny ruch z pmdata.pl. Strona to nie sklep, więc „konwersją” jest kontakt, nie zakup.
+- *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types) (darmowe, wygasa po 90 dniach bez wywołań API). Dane wgrywa nasz skrypt.
+- *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie; dane demo Odoo plus dogenerowane rekordy.
+
+Klucze łączące źródła (np. identyfikator leada z formularza w GA4 i w CRM) są syntetyczne — celem jest nauka integracji, nie realne wyniki biznesowe.
+
+### Skąd ten wybór (przegląd ogłoszeń, 2026-11-17)
+
+- Wśród pierwszych 49 wyników wyszukiwania „dbt” w kategorii Data na [justjoin.it](https://justjoin.it/job-offers/all-locations/data?keyword=dbt): tag dbt ma 38, Python 33, SQL 32, Snowflake 23, Airflow/Composer 18, BigQuery 11, CI/CD 9, Databricks 7, Fivetran 2.
+- Systemy źródłowe w opisach: SAP i Oracle (np. [P&P Solutions](https://justjoin.it/job-offer/p-p-solutions-data-engineer---data-contracts-quality-gcp--warszawa-data), DataArt — SAP BW, Diagnostyka — Oracle/LIMS i SAP przez CDC), dane marketingowe z CRM i GA4 ([Jit Team, GCP](https://jit.team/career/data-engineer-3/); AvaFin — Performance Marketing Data Engineer na [pracuj.pl](https://www.pracuj.pl/praca/inzynier-danych-google-performance-marketing-data-engineer-warszawa,oferta,1004392503)).
+- Wniosek: obok danych marketingowych powtarza się integracja systemów transakcyjnych (CRM, ERP), także przez CDC. SAP nie ma darmowego sandboxa, więc ERP ćwiczymy na Odoo — ten sam typ danych (zamówienia, faktury, zmiany rekordów).
 
 ## Automatyzacja: gdzie uruchamiać ingest
 
@@ -39,12 +47,12 @@ Skrypty z tego repo uruchamia się ręcznie. W pracy ten sam kod musi ruszać sa
 
 ### Scenariusz dla Airflow (wiersz 6)
 
-Dzienny potok etapu 6: przychody reklamowe w PLN, uzgodnione między źródłami. Jeden DAG, harmonogram codziennie rano:
+Dzienny potok etapu 6: przychód w PLN przypisany do źródła ruchu. Jeden DAG, harmonogram codziennie rano:
 
-1. **Równolegle trzy ingesty** jako Cloud Run joby (`CloudRunExecuteJobOperator`): kursy NBP, raport SSP i raport GAM. Każdy z lookbackiem kilku dni (dla NBP: `--lookback-days 7`) i idempotentnym zapisem, więc ponowienie zadania jest bezpieczne.
-2. **Czekanie na raport SSP.** API raportowe działa asynchronicznie (zlecenie → status → pobranie), więc ingest SSP sam odpytuje status, a Airflow pilnuje timeoutu i ponowień.
-3. **`dbt build`** dopiero gdy wszystkie trzy ingesty się powiodą: modele przeliczają EUR na PLN kursem NBP, wyrównują strefy czasowe i porównują GAM z SSP.
-4. **Testy dbt** jako bramka: rozjazd przychodów powyżej progu zatrzymuje potok przed publikacją.
+1. **Równolegle ingesty** jako Cloud Run joby (`CloudRunExecuteJobOperator`): NBP, GA4, Search Console, HubSpot i Odoo. Każdy z lookbackiem kilku dni (dla NBP: `--lookback-days 7`) i idempotentnym zapisem, więc ponowienie zadania jest bezpieczne.
+2. **Ponowienia per źródło.** HubSpot przy przekroczeniu limitu zwraca 429 — ingest czeka i ponawia, a Airflow pilnuje timeoutu i liczby prób, nie blokując pozostałych źródeł.
+3. **`dbt build`** dopiero gdy wszystkie ingesty się powiodą: modele łączą sesję z leadem, dealem i fakturą, przeliczają EUR na PLN kursem NBP i wyrównują strefy czasowe.
+4. **Testy dbt** jako bramka: np. faktura bez dealu albo deal bez kontaktu powyżej progu zatrzymuje potok przed publikacją.
 5. **Alert przy porażce** dowolnego zadania. Zadania zależne dostają stan `upstream_failed` i nie ruszają, więc nic nie liczy się na niepełnych danych. Po naprawie czyścisz nieudane zadanie razem z zadaniami zależnymi (Clear → Downstream) i Airflow uruchamia je ponownie — samo się to nie wznowi.
 
 Zależności i ponowienie nieudanego kroku da się zrobić też w GitHub Actions (`needs:`, „Re-run failed jobs”). Airflow wygrywa gdzie indziej: każdy przebieg ma swoją datę logiczną i stan per zadanie, a backfill zakresu dat to jedno polecenie (`airflow backfill create --dag-id ... --from-date ... --to-date ...` w Airflow 3, `airflow dags backfill` w Airflow 2).

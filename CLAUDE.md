@@ -12,15 +12,15 @@ Cel: nauka mechanizmów ingestu na realnych i realistycznych źródłach — lim
 uwierzytelnianie, ponowienia, idempotentny zapis. Kod ma działać, a komentarze po polsku mają
 tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
 
-Kierunek: dane, z którymi pracuje analityk internetowy — ekosystem Google, marketing, reklama.
-Etapy 2–6 w `README.md` to pierwsza propozycja (wątek ad-tech: GAM, SSP, Prebid, uzgadnianie przychodów
-w etapie 6), nie zobowiązanie. Planowany krok: przegląd ogłoszeń o pracę dla inżynierów danych w Polsce
-(z dbt w wymaganiach) i wybór kolejnych źródeł pod typy danych, które się w nich powtarzają.
+Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): GA4 i Search Console
+z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
+dane demo), model w dbt. Wybór wynika z przeglądu ogłoszeń DE z dbt z 2026-11-17 (sekcja w `README.md`).
+Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
-Stan na 2026-11-16: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
+Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–6 są planowane, ich foldery jeszcze nie istnieją.
 
 ## Struktura
 
@@ -66,6 +66,6 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 - Nowa logika z pętlą/rozgałęzieniem/parserem → mały test pytest w `<system>/test_ingest.py`.
   Testy nie łączą się z siecią ani z GCP.
 - Nowy etap = nowy folder + README folderu + aktualizacja wiersza w tabeli „Połączenia”.
-- Atrapy API (SSP, AppsFlyer) odtwarzają udokumentowany kontrakt prawdziwego API: endpointy,
-  uwierzytelnianie, format odpowiedzi, kody błędów. Kod klienta piszemy z oficjalnej dokumentacji.
+- Dane syntetyczne trafiają do prawdziwych systemów (konto testowe HubSpot, lokalne Odoo), a nie do
+  atrap — ingest zawsze rozmawia z prawdziwym API. Generator danych ma stały `seed` (powtarzalność).
 - Commity po angielsku, tryb rozkazujący, bezpośrednio na `main`.
