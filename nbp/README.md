@@ -23,6 +23,23 @@ uv run python nbp/ingest.py --project api-ingestion-lab-bq --start 2026-01-01 --
 uv run python nbp/ingest.py --project api-ingestion-lab-bq --dataset raw_nbp_test --start 2026-11-01
 ```
 
+## Konfiguracja
+
+Najpierw „Wspólne środowisko” z [głównego README](../README.md#wspólne-środowisko). NBP nie wymaga klucza ani dodatkowego API, więc zostaje tylko pierwsze uruchomienie i kontrola:
+
+```bash
+PROJECT=api-ingestion-lab-bq   # Twój projekt GCP
+
+# 1. Backfill: dataset raw_nbp i tabele powstają same przy pierwszym uruchomieniu.
+uv run python nbp/ingest.py --project $PROJECT --start 2025-01-01
+
+# 2. Kontrola duplikatów: obie liczby muszą być równe (klucz: dzień + waluta).
+bq query --use_legacy_sql=false "SELECT COUNT(*), COUNT(DISTINCT FORMAT('%t|%s', effective_date, currency_code)) FROM \`$PROJECT.raw_nbp.exchange_rates_a\`"
+
+# 3. Testy jednostkowe (bez sieci i bez GCP).
+uv run pytest nbp
+```
+
 ## Źródło
 
 - Endpoint: `GET https://api.nbp.pl/api/exchangerates/tables/A/{startDate}/{endDate}/`, nagłówek `Accept: application/json`. Dokumentacja: https://api.nbp.pl/

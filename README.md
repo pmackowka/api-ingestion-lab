@@ -2,36 +2,30 @@
 
 Pobieranie danych z API (głównie REST) w Pythonie i ładowanie ich do BigQuery. Projekt do nauki inżynierii danych: każde połączenie to osobny, niezależny pipeline w swoim folderze, z komentarzami po polsku, które tłumaczą mechanizm.
 
-Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda). Wybór źródeł wynika z przeglądu ogłoszeń z 2026-11-17 (niżej).
+Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda).
 
 ## Połączenia
 
 Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to indeks.
 
-| Etap | System | Folder | Status | Dane i dostęp | Czego uczy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
-|:-:|---|---|---|---|---|
-| 1 | [API NBP](https://api.nbp.pl/) — kursy walut, tabela A | [`nbp/`](nbp/README.md) | działa | prawdziwe<br>(API otwarte) | • GET i JSON<br>• limit 93 dni → dzielenie zakresu na okna<br>• idempotentny zapis do BigQuery |
-| 2 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) — pogoda historyczna (archiwum) | [`weather/`](weather/README.md) | działa | prawdziwe<br>(API otwarte, użytek niekomercyjny) | • GET bez klucza, wiele lokalizacji w jednym zapytaniu<br>• strefa czasowa i granice doby (`timezone`)<br>• dane korygowane wstecz: reanaliza ERA5 z opóźnieniem 5 dni → lookback<br>• limit 10 000 wywołań dziennie |
-| 3 | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl | `ga4/` | planowany | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
-| 4 | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl | `search_console/` | planowany | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
-| 5 | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale | `hubspot/` | planowany | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• źródło leada (UTM) losowane według proporcji źródeł z GA4<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
-| 6 | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury | `odoo/` | planowany | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
-| 7 | Model w dbt na BigQuery | `model/` | planowany | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
+| Etap | System i folder | Dane i dostęp | Czego uczy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
+|:-:|---|---|---|
+| 1<br>*działa* | [API NBP](https://api.nbp.pl/) — kursy walut, tabela A<br>[`nbp/`](nbp/README.md) | prawdziwe<br>(API otwarte) | • GET i JSON<br>• limit 93 dni → dzielenie zakresu na okna<br>• idempotentny zapis do BigQuery |
+| 2<br>*działa* | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) — pogoda historyczna (archiwum)<br>[`weather/`](weather/README.md) | prawdziwe<br>(API otwarte, użytek niekomercyjny) | • GET bez klucza, wiele lokalizacji w jednym zapytaniu<br>• strefa czasowa i granice doby (`timezone`)<br>• dane korygowane wstecz: reanaliza ERA5 z opóźnieniem 5 dni → lookback<br>• limit 10 000 wywołań dziennie |
+| 3<br>*planowany* | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl<br>`ga4/` | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
+| 4<br>*planowany* | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl<br>`search_console/` | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
+| 5<br>*planowany* | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale<br>`hubspot/` | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• źródło leada (UTM) losowane według proporcji źródeł z GA4<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
+| 6<br>*planowany* | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury<br>`odoo/` | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
+| 7<br>*planowany* | Model w dbt na BigQuery<br>`model/` | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
 
 **Dane i dostęp** — co faktycznie trafi do BigQuery i skąd:
 
 - *prawdziwe (API otwarte)* — produkcyjne dane źródła, dostępne dla każdego bez klucza. NBP to produkcyjne API, nie sandbox. Open-Meteo za darmo tylko do użytku niekomercyjnego. Alternatywa IMGW (`danepubliczne.imgw.pl/api/data/synop`) zwraca tylko ostatni pomiar, bez historii — nie nadaje się do backfillu.
 - *prawdziwe (własna usługa)* — realny ruch z pmdata.pl. Strona to nie sklep, więc „konwersją” jest kontakt, nie zakup.
 - *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types) (darmowe, wygasa po 90 dniach bez wywołań API). Dane wgrywa nasz skrypt.
-- *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie; dane demo Odoo plus dogenerowane rekordy.
+- *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie; dane demo Odoo plus dogenerowane rekordy. ERP to Odoo, bo SAP i popularne polskie systemy ERP nie mają darmowego środowiska z API; Odoo daje ten sam typ danych (zamówienia, faktury, rekordy zmieniane i usuwane) i bazę PostgreSQL do ćwiczenia CDC.
 
 Jak łączą się źródła: GA4 Data API zwraca agregaty (dzień × źródło ruchu), nie pojedynczych użytkowników, a pmdata.pl nie ma formularza — są tylko kliknięcia w e-mail, telefon i LinkedIn. Dlatego złączenie jest na agregatach, po `data × źródło`: syntetyczne leady w HubSpot dostają źródło losowane według proporcji źródeł z GA4 (udział każdego źródła w kliknięciach w kontakt danego dnia), a ich dzienna liczba wynika z prawdziwych kliknięć w kontakt × założony współczynnik. Złączenie po identyfikatorze leada (backend generuje `lead_id`, wysyła go do CRM i do GA4) wymagałoby eksportu GA4 do BigQuery i jest poza zakresem.
-
-### Skąd ten wybór (przegląd ogłoszeń, 2026-11-17)
-
-- Wśród pierwszych 49 wyników wyszukiwania „dbt” w kategorii Data na [justjoin.it](https://justjoin.it/job-offers/all-locations/data?keyword=dbt): tag dbt ma 38, Python 33, SQL 32, Snowflake 23, Airflow/Composer 18, BigQuery 11, CI/CD 9, Databricks 7, Fivetran 2.
-- Systemy źródłowe w opisach: SAP i Oracle (np. [P&P Solutions](https://justjoin.it/job-offer/p-p-solutions-data-engineer---data-contracts-quality-gcp--warszawa-data), DataArt — SAP BW, Diagnostyka — Oracle/LIMS i SAP przez CDC), dane marketingowe z CRM i GA4 ([Jit Team, GCP](https://jit.team/career/data-engineer-3/); AvaFin — Performance Marketing Data Engineer na [pracuj.pl](https://www.pracuj.pl/praca/inzynier-danych-google-performance-marketing-data-engineer-warszawa,oferta,1004392503)).
-- Wniosek: obok danych marketingowych powtarza się integracja systemów transakcyjnych (CRM, ERP), także przez CDC. SAP nie ma darmowego sandboxa, więc ERP ćwiczymy na Odoo — ten sam typ danych (zamówienia, faktury, zmiany rekordów).
 
 ## Automatyzacja: gdzie uruchamiać ingest
 
@@ -62,9 +56,42 @@ Zależności i ponowienie nieudanego kroku da się zrobić też w GitHub Actions
 
 ## Wspólne środowisko
 
-Foldery są niezależne od siebie, ale dzielą jedno środowisko Pythona (`pyproject.toml` w katalogu głównym).
+Foldery są niezależne od siebie, ale dzielą jedno środowisko Pythona (`pyproject.toml`) i jedną tożsamość w GCP: konto usługi `ingest-runner`, pod które podszywasz się lokalnie (impersonation) — bez pliku z kluczem. Wymagane: [uv](https://docs.astral.sh/uv/) i [gcloud CLI](https://cloud.google.com/sdk/docs/install). Konfiguracja jednorazowa, od zera:
 
-1. `uv sync` — instaluje zależności do `.venv/`.
-2. `gcloud auth application-default login` — poświadczenia dla bibliotek Google (ADC).
-3. `gcloud auth application-default set-quota-project <projekt-gcp>` — projekt, który biblioteki podają jako rozliczeniowy. Musi istnieć, inaczej każde wywołanie BigQuery kończy się błędem 400.
-4. Dalej według README konkretnego folderu.
+```bash
+# Zmienne: ID projektu GCP jest globalnie unikalne — wymyśl własne. E-mail = Twoje konto Google.
+PROJECT=api-ingestion-lab-bq
+ME=twoj-email@gmail.com
+SA=ingest-runner@$PROJECT.iam.gserviceaccount.com
+
+# 1. Zależności Pythona do .venv/ (wersje z uv.lock).
+uv sync
+
+# 2. Logowanie gcloud (komendy administracyjne niżej) i projekt domyślny.
+gcloud auth login
+gcloud projects create $PROJECT            # pomiń, jeśli projekt już istnieje; billing niepotrzebny (sandbox BigQuery)
+gcloud config set project $PROJECT
+
+# 3. API BigQuery — w nowym projekcie wszystkie API są wyłączone.
+gcloud services enable bigquery.googleapis.com --project=$PROJECT
+
+# 4. Konto usługi: osobna tożsamość dla skryptów, ta sama lokalnie i w harmonogramie (GitHub Actions + WIF).
+gcloud iam service-accounts create ingest-runner --project=$PROJECT --display-name="Ingest runner (GA4, BigQuery)"
+
+# 5. Najmniejsze potrzebne uprawnienia w BigQuery: tworzenie tabel i zapis (dataEditor), uruchamianie zadań (jobUser).
+gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/bigquery.dataEditor --condition=None
+gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/bigquery.jobUser --condition=None
+
+# 6. Twoje konto może generować krótkotrwałe tokeny konta usługi — zamiast pliku z kluczem, który mógłby wyciec.
+gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT --member=user:$ME --role=roles/iam.serviceAccountTokenCreator
+
+# 7. ADC = poświadczenia, które biblioteki Google biorą automatycznie. Od teraz każdy skrypt działa jako konto usługi.
+#    Zakres analytics.readonly potrzebny od etapu 3 (GA4); cloud-platform obejmuje BigQuery.
+gcloud auth application-default login --impersonate-service-account=$SA \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/analytics.readonly"
+
+# 8. Kontrola: zwraca token = ADC działa.
+gcloud auth application-default print-access-token > /dev/null && echo "ADC OK"
+```
+
+Dalej: sekcja „Konfiguracja” w README konkretnego folderu (kroki specyficzne dla źródła).
