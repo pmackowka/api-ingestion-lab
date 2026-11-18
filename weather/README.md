@@ -8,13 +8,13 @@ Interfejs taki sam jak w `nbp/` — każde uruchomienie podmienia w tabeli zakre
 
 ```bash
 # Backfill: cała historia od 2025 roku — 5 miast x 687 dni w jednym zapytaniu (ok. 1–2 s).
-uv run python weather/ingest.py --project api-ingestion-lab-bq --start 2025-01-01
+uv run python -m weather.ingest --project api-ingestion-lab-bq --start 2025-01-01
 
 # Codzienny przyrost: podmienia ostatnie 8 dni — łapie korekty modelu z ostatnich dni.
-uv run python weather/ingest.py --project api-ingestion-lab-bq --lookback-days 7
+uv run python -m weather.ingest --project api-ingestion-lab-bq --lookback-days 7
 
 # Ponowne załadowanie jednego okresu; reszta tabeli bez zmian.
-uv run python weather/ingest.py --project api-ingestion-lab-bq --start 2026-01-01 --end 2026-03-31
+uv run python -m weather.ingest --project api-ingestion-lab-bq --start 2026-01-01 --end 2026-03-31
 ```
 
 ## Konfiguracja
@@ -25,7 +25,7 @@ Najpierw „Wspólne środowisko” z [głównego README](../README.md#wspólne-
 PROJECT=api-ingestion-lab-bq   # Twój projekt GCP
 
 # 1. Backfill: dataset raw_weather i tabele powstają same przy pierwszym uruchomieniu.
-uv run python weather/ingest.py --project $PROJECT --start 2025-01-01
+uv run python -m weather.ingest --project $PROJECT --start 2025-01-01
 
 # 2. Kontrola duplikatów: obie liczby muszą być równe (klucz: dzień + miasto).
 bq query --use_legacy_sql=false "SELECT COUNT(*), COUNT(DISTINCT FORMAT('%t|%s', weather_date, location_id)) FROM \`$PROJECT.raw_weather.daily_weather\`"
@@ -56,11 +56,11 @@ Zachowanie API sprawdzone na żywo (2026-11-17/18):
 
 ## Jak działa jedno uruchomienie
 
-Ten sam przepływ co w `nbp/` (diagram i wyjaśnienie: [`nbp/README.md`](../nbp/README.md)), z trzema różnicami:
+Wspólny przepływ i diagram: [główne README](../README.md#jak-dane-trafiają-do-bigquery). Specyficzne dla pogody:
 
 1. `fetch` — jeden GET dla wszystkich miast, z ponowieniami błędów przejściowych (sieć, timeout, 5xx). Błąd 400 przerywa od razu: zła data nie naprawi się sama.
 2. `to_rows` — odpowiedź kolumnowa → wiersze `miasto x dzień` przez `zip(..., strict=True)`; listy różnej długości to błąd, nie powód do cichego ucięcia.
-3. `load_to_bigquery` — kopia wzorca z NBP (staging + `UNION ALL` + `WRITE_TRUNCATE_DATA`), nie import: foldery mają być czytelne osobno. Wspólny moduł wydzielimy przy trzecim źródle.
+3. Zapis — wspólna funkcja `replace_date_range` z [`common/bigquery.py`](../common/bigquery.py) (staging + `UNION ALL` + `WRITE_TRUNCATE_DATA`), ta sama dla wszystkich źródeł; pogoda podaje tylko tabelę, schemat i kolumnę z datą.
 
 ## Tabela docelowa
 
@@ -82,6 +82,6 @@ Dlaczego FLOAT64, a nie NUMERIC jak kursy NBP: to pomiary z modelu, nie kwoty. B
 
 ## Strategia ładowania
 
-Przepisanie z podmianą zakresu — jak w NBP i z tych samych powodów (sandbox bez DML, mała tabela: ok. 1800 wierszy rocznie). Pełne uzasadnienie i porównanie strategii: [`nbp/README.md`](../nbp/README.md#strategie-ładowania).
+Przepisanie z podmianą zakresu — jak w NBP i z tych samych powodów (sandbox bez DML, mała tabela: ok. 1800 wierszy rocznie). Pełne uzasadnienie i porównanie strategii: [główne README](../README.md#strategie-ładowania).
 
 Lookback ma tu mocniejszy powód niż w NBP: kurs raz opublikowany się nie zmienia, a pogoda z ostatnich dni tak — najnowsze dni pochodzą z modelu prognostycznego i są później zastępowane danymi z reanalizy ERA5, publikowanej z 5-dniowym opóźnieniem ([źródła danych](https://open-meteo.com/en/docs/historical-weather-api)). `--lookback-days 7` obejmuje to okno.

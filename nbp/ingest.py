@@ -1,8 +1,8 @@
 """Kursy średnie NBP (tabela A) -> BigQuery.
 
 Uruchomienie:
-    uv run python nbp/ingest.py --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31   # backfill
-    uv run python nbp/ingest.py --project <projekt-gcp> --lookback-days 7                    # harmonogram
+    uv run python -m nbp.ingest --project <projekt-gcp> --start 2026-01-01 --end 2026-03-31   # backfill
+    uv run python -m nbp.ingest --project <projekt-gcp> --lookback-days 7                    # harmonogram
 """
 
 import argparse
@@ -14,14 +14,15 @@ from decimal import Decimal
 
 from google.cloud import bigquery
 
+from common import cli
+from common.bigquery import replace_date_range
+
 API_URL = "https://api.nbp.pl/api/exchangerates/tables/A/{start}/{end}/"
 # API przyjmuje end - start <= 93 dni (sprawdzone empirycznie: 94 dni różnicy -> 400).
 # Bierzemy 93 dni kalendarzowe włącznie (różnica 92), żeby mieć zapas na zmianę interpretacji limitu.
 WINDOW_DAYS = 93
 
-TARGET_TABLE = "exchange_rates_a"
-# Podkreślnik na początku: tabela techniczna, nie do czytania przez analityków.
-STAGING_TABLE = "_staging_exchange_rates_a"
+TARGET_TABLE = "exchange_rates_a"  # staging: _staging_exchange_rates_a (tworzy common/bigquery.py)
 
 # Jeden schemat dla staging i tabeli docelowej. Klucz naturalny: (effective_date, currency_code).
 SCHEMA = [
@@ -105,86 +106,9 @@ def to_rows(tables: list[dict], loaded_at: datetime) -> list[dict]:
     return rows
 
 
-def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, end: date) -> None:
-    """Krok 4: zapisuje wiersze tak, żeby zakres [start, end] w tabeli docelowej został podmieniony w całości.
-
-    Idempotencja: dwa uruchomienia dla tego samego zakresu dają ten sam stan tabeli, bez duplikatów.
-    """
-    client = bigquery.Client(project=project)
-
-    # exists_ok=True: pierwsze uruchomienie tworzy dataset i tabelę, kolejne niczego nie zmieniają.
-    client.create_dataset(f"{project}.{dataset}", exists_ok=True)
-    target = f"{project}.{dataset}.{TARGET_TABLE}"
-    staging = f"{project}.{dataset}.{STAGING_TABLE}"
-    client.create_table(bigquery.Table(target, schema=SCHEMA), exists_ok=True)
-
-    # Krok 4a: load do staging.
-    # Po co staging: dane z API najpierw lądują w BigQuery "obok", a dopiero potem jednym
-    # atomowym zapytaniem trafiają do tabeli docelowej. Gdy load padnie (np. NULL w kolumnie
-    # REQUIRED), tabela docelowa zostaje nietknięta.
-    # WRITE_TRUNCATE: staging zawiera zawsze tylko dane bieżącego uruchomienia.
-    load_config = bigquery.LoadJobConfig(
-        schema=SCHEMA,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-    )
-    client.load_table_from_json(rows, staging, job_config=load_config).result()
-
-    # Krok 4b: przepisanie tabeli docelowej jednym query jobem.
-    # Porównanie z innymi strategiami (MERGE, append, partycje): nbp/README.md, "Strategie ładowania".
-    # Wynik = stare wiersze SPOZA zakresu + wszystkie wiersze ze staging. Wiersze z zakresu
-    # [start, end] są więc wymieniane w całości — także te, których NBP już nie zwraca.
-    #
-    # Dlaczego nie MERGE: projekt jest w sandboxie BigQuery, a sandbox odrzuca DML
-    # (MERGE/INSERT/UPDATE/DELETE) błędem 403. Query job z tabelą docelową to nie DML, więc działa.
-    #
-    # Dlaczego to bezpieczne: zapytanie czyta tabelę docelową i ją nadpisuje, ale BigQuery
-    # zapisuje wynik dopiero po zakończeniu zapytania, a cały job jest atomowy —
-    # albo podmieni tabelę, albo zostawi ją bez zmian.
-    #
-    # WRITE_TRUNCATE_DATA zamiast WRITE_TRUNCATE: oba nadpisują dane, ale WRITE_TRUNCATE
-    # bierze schemat z wyniku zapytania (kolumny stają się NULLABLE), a WRITE_TRUNCATE_DATA
-    # zostawia schemat tabeli — REQUIRED zostaje.
-    #
-    # @start/@end jako parametry zapytania, nie f-string: BigQuery sam pilnuje typu DATE
-    # i nie ma ryzyka wstrzyknięcia SQL.
-    rewrite_sql = f"""
-        SELECT * FROM `{target}`
-        WHERE effective_date NOT BETWEEN @start AND @end
-        UNION ALL
-        SELECT * FROM `{staging}`
-    """
-    query_config = bigquery.QueryJobConfig(
-        destination=target,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE_DATA,
-        query_parameters=[
-            bigquery.ScalarQueryParameter("start", "DATE", start),
-            bigquery.ScalarQueryParameter("end", "DATE", end),
-        ],
-    )
-    client.query(rewrite_sql, job_config=query_config).result()
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Czyta argumenty; początek zakresu podajesz datą (--start) albo liczbą dni wstecz (--lookback-days).
-
-    Po co --lookback-days: harmonogram (cron, Cloud Run job) ma stałe argumenty, więc nie wpisze
-    "dziś minus 7 dni" jako daty. Liczba dni jest stała, a data startu liczy się przy każdym uruchomieniu.
-    """
-    parser = argparse.ArgumentParser(description="Kursy NBP (tabela A) -> BigQuery")
-    parser.add_argument("--project", required=True, help="ID projektu GCP")
-    parser.add_argument("--dataset", default="raw_nbp")
-    # type=date.fromisoformat: zła data (np. 2026-13-01) kończy się błędem argparse, zanim ruszy API.
-    parser.add_argument("--end", type=date.fromisoformat, default=date.today())
-    # Dokładnie jedno z dwóch: ręczny backfill od daty albo automatyczny lookback.
-    start_group = parser.add_mutually_exclusive_group(required=True)
-    start_group.add_argument("--start", type=date.fromisoformat)
-    start_group.add_argument("--lookback-days", type=int, help="start = end minus tyle dni")
-    args = parser.parse_args(argv)
-    if args.lookback_days is not None:
-        if args.lookback_days < 0:
-            parser.error("--lookback-days nie może być ujemne")
-        args.start = args.end - timedelta(days=args.lookback_days)
-    return args
+    """Wspólny interfejs CLI (common/cli.py): --project, --dataset, --start albo --lookback-days, --end."""
+    return cli.parse(cli.make_parser("Kursy NBP (tabela A) -> BigQuery", default_dataset="raw_nbp"), argv)
 
 
 def main() -> None:
@@ -205,8 +129,18 @@ def main() -> None:
         print("Brak notowań w zakresie — nic do załadowania.")
         return
 
-    # Krok 4: zapis do BigQuery z podmianą zakresu [start, end].
-    load_to_bigquery(rows, args.project, args.dataset, args.start, args.end)
+    # Krok 4: zapis do BigQuery z podmianą zakresu [start, end] — wspólny dla wszystkich źródeł,
+    # opis mechanizmu w common/bigquery.py i README.md („Jak dane trafiają do BigQuery”).
+    replace_date_range(
+        rows,
+        project=args.project,
+        dataset=args.dataset,
+        table=TARGET_TABLE,
+        schema=SCHEMA,
+        date_column="effective_date",
+        start=args.start,
+        end=args.end,
+    )
     print(f"Załadowano {len(rows)} wierszy do {args.project}.{args.dataset}.{TARGET_TABLE}")
 
 

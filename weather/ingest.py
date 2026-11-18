@@ -1,8 +1,8 @@
 """Pogoda dzienna z Open-Meteo (archiwum) -> BigQuery.
 
 Uruchomienie:
-    uv run python weather/ingest.py --project <projekt-gcp> --start 2025-01-01      # backfill
-    uv run python weather/ingest.py --project <projekt-gcp> --lookback-days 7       # harmonogram
+    uv run python -m weather.ingest --project <projekt-gcp> --start 2025-01-01      # backfill
+    uv run python -m weather.ingest --project <projekt-gcp> --lookback-days 7       # harmonogram
 """
 
 import argparse
@@ -11,9 +11,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from google.cloud import bigquery
+
+from common import cli
+from common.bigquery import replace_date_range
 
 API_URL = "https://archive-api.open-meteo.com/v1/archive"
 
@@ -38,7 +41,6 @@ LOCATIONS = {
 }
 
 TARGET_TABLE = "daily_weather"
-STAGING_TABLE = "_staging_daily_weather"
 
 # Klucz naturalny: (weather_date, location_id).
 # FLOAT64, nie NUMERIC jak kursy w NBP: temperatura i opad to pomiary z modelu, nie kwoty —
@@ -154,60 +156,10 @@ def to_rows(locations: list[dict], loaded_at: datetime) -> list[dict]:
     return rows
 
 
-def load_to_bigquery(rows: list[dict], project: str, dataset: str, start: date, end: date) -> None:
-    """Krok 3: podmienia zakres [start, end] w tabeli docelowej — ten sam wzorzec co nbp/ingest.py.
-
-    Kopia, nie import z nbp: foldery są niezależne i każdy da się przeczytać w całości bez skakania
-    po repo. Wspólny moduł wydzielimy przy trzecim źródle, gdy będzie wiadomo, co naprawdę się powtarza.
-    Szczegółowe wyjaśnienie mechanizmu (staging, UNION ALL, WRITE_TRUNCATE_DATA): nbp/README.md.
-    """
-    client = bigquery.Client(project=project)
-    client.create_dataset(f"{project}.{dataset}", exists_ok=True)
-    target = f"{project}.{dataset}.{TARGET_TABLE}"
-    staging = f"{project}.{dataset}.{STAGING_TABLE}"
-    client.create_table(bigquery.Table(target, schema=SCHEMA), exists_ok=True)
-
-    # Krok 3a: staging zawiera zawsze tylko dane bieżącego uruchomienia.
-    load_config = bigquery.LoadJobConfig(schema=SCHEMA, write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE)
-    client.load_table_from_json(rows, staging, job_config=load_config).result()
-
-    # Krok 3b: stare wiersze spoza zakresu + świeży zakres ze stagingu -> tabela docelowa, atomowo.
-    # Zakres dotyczy wszystkich lokalizacji naraz, bo każde uruchomienie pobiera wszystkie.
-    rewrite_sql = f"""
-        SELECT * FROM `{target}`
-        WHERE weather_date NOT BETWEEN @start AND @end
-        UNION ALL
-        SELECT * FROM `{staging}`
-    """
-    query_config = bigquery.QueryJobConfig(
-        destination=target,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE_DATA,
-        query_parameters=[
-            bigquery.ScalarQueryParameter("start", "DATE", start),
-            bigquery.ScalarQueryParameter("end", "DATE", end),
-        ],
-    )
-    client.query(rewrite_sql, job_config=query_config).result()
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Ten sam interfejs CLI co nbp/ingest.py — warunek, żeby harmonogram odpalał wszystkie źródła
-    jedną komendą (matrix w GitHub Actions, patrz CLAUDE.md)."""
-    parser = argparse.ArgumentParser(description="Pogoda dzienna Open-Meteo -> BigQuery")
-    parser.add_argument("--project", required=True, help="ID projektu GCP")
-    parser.add_argument("--dataset", default="raw_weather")
-    # Domyślnie dziś: API przyjmuje end_date najwyżej równe dzisiejszej dacie (jutro -> 400).
-    # Dzisiejsza wartość jest niepełna (doba trwa) — poprawi ją lookback przy następnym uruchomieniu.
-    parser.add_argument("--end", type=date.fromisoformat, default=date.today())
-    start_group = parser.add_mutually_exclusive_group(required=True)
-    start_group.add_argument("--start", type=date.fromisoformat)
-    start_group.add_argument("--lookback-days", type=int, help="start = end minus tyle dni")
-    args = parser.parse_args(argv)
-    if args.lookback_days is not None:
-        if args.lookback_days < 0:
-            parser.error("--lookback-days nie może być ujemne")
-        args.start = args.end - timedelta(days=args.lookback_days)
-    return args
+    """Wspólny interfejs CLI (common/cli.py). --end domyślnie dziś: API przyjmuje end_date najwyżej
+    równe dzisiejszej dacie (jutro -> 400), a niepełną dzisiejszą wartość poprawi lookback."""
+    return cli.parse(cli.make_parser("Pogoda dzienna Open-Meteo -> BigQuery", default_dataset="raw_weather"), argv)
 
 
 def main() -> None:
@@ -215,7 +167,16 @@ def main() -> None:
     loaded_at = datetime.now(timezone.utc)
     rows = to_rows(fetch(args.start, args.end), loaded_at)
     print(f"{args.start}..{args.end}: {len(rows)} wierszy ({len(LOCATIONS)} lokalizacji)")
-    load_to_bigquery(rows, args.project, args.dataset, args.start, args.end)
+    replace_date_range(
+        rows,
+        project=args.project,
+        dataset=args.dataset,
+        table=TARGET_TABLE,
+        schema=SCHEMA,
+        date_column="weather_date",
+        start=args.start,
+        end=args.end,
+    )
     print(f"Załadowano do {args.project}.{args.dataset}.{TARGET_TABLE}")
 
 
