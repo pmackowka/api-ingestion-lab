@@ -22,10 +22,10 @@ SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 PAGE_SIZE = 25_000
 
 # Dwie tabele, bo Search Console liczy inaczej zależnie od wymiarów (sprawdzone na żywo, 2025-01..2026-11):
-# - bez `page`: sumy dla całej usługi (byProperty) — 679 wyświetleń, zgodnie z panelem;
-# - z `page`: każda podstrona widoczna w wyniku dostaje swoje wyświetlenie (byPage) — 1089 wyświetleń.
+# - bez `page`: sumy dla całej usługi (byProperty), zgodne z panelem;
+# - z `page`: każda podstrona widoczna w wyniku dostaje swoje wyświetlenie (byPage) — suma wyraźnie większa.
 # Dokumentacja: dla dokładnych sum usługi pomiń page i query. Sumy z tabeli stron nie są więc sumą usługi.
-# Wymiaru `query` nie ładujemy: Google anonimizuje rzadkie zapytania — widać 38 z 679 wyświetleń.
+# Wymiaru `query` nie ładujemy: Google anonimizuje rzadkie zapytania — widać tylko ułamek wyświetleń.
 REPORTS = {
     "search_daily": ["date", "country", "device"],
     "search_pages_daily": ["date", "page"],
