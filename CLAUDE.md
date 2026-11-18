@@ -22,9 +22,9 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
-Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–7 są planowane, ich foldery jeszcze nie istnieją.
-Następny krok: etap 2 (`weather/`, Open-Meteo — bez klucza, ten sam wzorzec co NBP), potem etap 3 (`ga4/`,
-GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4 i property ID od Piotra). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-18: etapy 1 (`nbp/`) i 2 (`weather/`) działają, etapy 3–7 są planowane, ich foldery jeszcze nie istnieją.
+Następny krok: etap 3 (`ga4/`, GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4
+i property ID od Piotra). Przy nim wydzielić wspólny `load_to_bigquery` (dziś skopiowany w nbp/ i weather/). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Przy automatyzacji (po etapie 3): workflow `.github/workflows/pipeline.yml` (cron + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`, potem job `dbt` z `needs: ingest`. Razem z nim powstaje
@@ -51,6 +51,7 @@ uv run pytest                                                      # wszystkie t
 uv run pytest nbp                                                  # testy jednego folderu
 uv run python nbp/ingest.py --project api-ingestion-lab-bq --start 2025-01-01   # backfill NBP
 uv run python nbp/ingest.py --project api-ingestion-lab-bq --lookback-days 7     # przyrost NBP
+uv run python weather/ingest.py --project api-ingestion-lab-bq --lookback-days 7 # przyrost pogody
 ```
 
 Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
