@@ -13,6 +13,50 @@ from google.cloud import bigquery
 LOCATION = "EU"
 
 
+def _client_with_dataset(project: str, dataset: str) -> bigquery.Client:
+    """Klient BigQuery + dataset w EU (tworzony przy pierwszym uruchomieniu). Wspólne dla obu strategii zapisu."""
+    # location w kliencie: zadania (load, query) wykonują się w tej samej lokalizacji co dane.
+    client = bigquery.Client(project=project, location=LOCATION)
+
+    # exists_ok=True: pierwsze uruchomienie tworzy dataset, kolejne niczego nie zmieniają.
+    dataset_ref = bigquery.Dataset(f"{project}.{dataset}")
+    dataset_ref.location = LOCATION
+    existing = client.create_dataset(dataset_ref, exists_ok=True)
+    # exists_ok zwraca istniejący dataset bez sprawdzania lokalizacji — dataset sprzed tej zmiany (US)
+    # przeszedłby po cichu. Przerywamy, zamiast pisać dane poza UE.
+    if existing.location != LOCATION:
+        raise RuntimeError(
+            f"Dataset {project}.{dataset} jest w {existing.location}, oczekiwano {LOCATION}. "
+            "Lokalizacji nie da się zmienić: usuń dataset (bq rm -r -f) i uruchom backfill od nowa."
+        )
+    return client
+
+
+def replace_table(
+    rows: list[dict],
+    *,
+    project: str,
+    dataset: str,
+    table: str,
+    schema: list[bigquery.SchemaField],
+) -> None:
+    """Pełne przeładowanie: tabela po zapisie zawiera dokładnie `rows` — migawkę źródła z tej chwili.
+
+    Dla rekordów zmienialnych (kontakty w CRM): rekord poprawiony albo usunięty w źródle zmienia się
+    też w tabeli, bez klucza i bez DML. Podmiana zakresu dat tu nie pasuje — rekord nie ma jednej
+    „swojej” daty, a zmieniony wczoraj kontakt z 2025 roku trafiłby do tabeli drugi raz.
+    """
+    client = _client_with_dataset(project, dataset)
+    # Bez stagingu: pojedynczy load job z WRITE_TRUNCATE jest atomowy — błąd (np. NULL w REQUIRED)
+    # zostawia poprzednią wersję tabeli. Staging jest potrzebny dopiero, gdy wynik skleja się z tym,
+    # co już jest w tabeli (replace_date_range niżej).
+    load_config = bigquery.LoadJobConfig(
+        schema=schema,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    client.load_table_from_json(rows, f"{project}.{dataset}.{table}", job_config=load_config).result()
+
+
 def replace_date_range(
     rows: list[dict],
     *,
@@ -29,20 +73,7 @@ def replace_date_range(
     Idempotencja: dwa uruchomienia dla tego samego zakresu dają ten sam stan tabeli, bez duplikatów.
     Argumenty po `*` tylko z nazwą: przy 8 parametrach pomyłka kolejności (np. start z end) byłaby niewidoczna.
     """
-    # location w kliencie: zadania (load, query) wykonują się w tej samej lokalizacji co dane.
-    client = bigquery.Client(project=project, location=LOCATION)
-
-    # exists_ok=True: pierwsze uruchomienie tworzy dataset i tabelę, kolejne niczego nie zmieniają.
-    dataset_ref = bigquery.Dataset(f"{project}.{dataset}")
-    dataset_ref.location = LOCATION
-    existing = client.create_dataset(dataset_ref, exists_ok=True)
-    # exists_ok zwraca istniejący dataset bez sprawdzania lokalizacji — dataset sprzed tej zmiany (US)
-    # przeszedłby po cichu. Przerywamy, zamiast pisać dane poza UE.
-    if existing.location != LOCATION:
-        raise RuntimeError(
-            f"Dataset {project}.{dataset} jest w {existing.location}, oczekiwano {LOCATION}. "
-            "Lokalizacji nie da się zmienić: usuń dataset (bq rm -r -f) i uruchom backfill od nowa."
-        )
+    client = _client_with_dataset(project, dataset)
     target = f"{project}.{dataset}.{table}"
     # Podkreślnik na początku: tabela techniczna, nie do czytania przez analityków.
     staging = f"{project}.{dataset}._staging_{table}"
