@@ -25,12 +25,11 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
 Stan na 2026-11-18: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739) i 4 (`search_console/`, `sc-domain:pmdata.pl`) działają, etapy 5–7 są planowane, ich foldery jeszcze nie istnieją.
 Następny krok: etap 5 (`hubspot/`, HubSpot CRM API na darmowym koncie testowym dewelopera; dane syntetyczne
-ze źródłem leada według proporcji źródeł z GA4). Po etapie 4 są już 4 źródła — można też zrobić `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+ze źródłem leada według proporcji źródeł z GA4); po nim dopisać `hubspot` do `matrix.include` w `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
-Przy automatyzacji (po etapie 3): workflow `.github/workflows/pipeline.yml` (cron + `workflow_dispatch`, osobno od `ci.yml`),
-ingesty jako `strategy.matrix` z `fail-fast: false`, potem job `dbt` z `needs: ingest`. Razem z nim powstaje
-`docs/orkiestracja.md`: porównanie wariantów (matrix / osobny job na źródło / jeden job z krokami / osobny workflow
-na źródło / Airflow) z uzasadnieniem, dlaczego matrix — o to prosił Piotr. Warunek matrix: każdy `<system>/ingest.py`
+Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 3:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
+ingesty jako `strategy.matrix` z `fail-fast: false`; w etapie 7 dojdzie job `dbt` z `needs: ingest`. Uzasadnienie wariantu
+w `docs/orkiestracja.md` (matrix / osobny job na źródło / jeden job z krokami / osobny workflow na źródło / Airflow). Warunek matrix: każdy `<system>/ingest.py`
 ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
 
 ## Struktura
@@ -46,6 +45,9 @@ ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-
   `http.py` (sesja z tokenem z ADC i ponowieniami dla API Google).
   Wydzielony przy trzecim źródle. Dlatego skrypty uruchamia się jako moduły: `python -m <system>.ingest`
   (`python <system>/ingest.py` nie widzi pakietu `common`).
+- `.github/workflows/pipeline.yml` — codzienny ingest wszystkich źródeł; poświadczenia przez Workload Identity Federation
+  (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `README.md`.
+- `docs/` — dokumenty przekrojowe (np. `orkiestracja.md` — porównanie wariantów orkiestracji).
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP.
 
