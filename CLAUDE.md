@@ -34,7 +34,7 @@ ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-
 
 ## Struktura
 
-- `README.md` — indeks połączeń, wspólny przepływ zapisu (diagram, strategie ładowania), automatyzacja, wspólne środowisko.
+- `README.md` — indeks połączeń, wspólny przepływ zapisu (diagram, strategie ładowania), tabela wariantów automatyzacji.
   Zasada: to, co dotyczy wszystkich źródeł, idzie do głównego README; to, co specyficzne dla źródła — do README folderu.
 - `<system>/` — jeden folder na źródło, będący pakietem: `__init__.py`, `ingest.py`, `test_ingest.py`, `README.md`.
   Testy importują `from <system>.ingest import ...` — bez `__init__.py` dwa pliki `test_ingest.py`
@@ -46,8 +46,8 @@ ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-
   Wydzielony przy trzecim źródle. Dlatego skrypty uruchamia się jako moduły: `python -m <system>.ingest`
   (`python <system>/ingest.py` nie widzi pakietu `common`).
 - `.github/workflows/pipeline.yml` — codzienny ingest wszystkich źródeł; poświadczenia przez Workload Identity Federation
-  (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `README.md`.
-- `docs/` — dokumenty przekrojowe (np. `orkiestracja.md` — porównanie wariantów orkiestracji).
+  (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `docs/konfiguracja.md`.
+- `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji).
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP.
 
@@ -71,7 +71,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
     docelową i `WRITE_TRUNCATE_DATA` (`common/bigquery.py`, `replace_date_range`, używany przez wszystkie źródła);
   - tabele wygasają po 60 dniach — po wygaśnięciu ingest uruchamia się ponownie z pełnym zakresem.
 - Poświadczenia: ADC z podszywaniem się pod konto usługi `ingest-runner` (bez pliku z kluczem), zakresy
-  `cloud-platform` + `analytics.readonly` + `webmasters.readonly`; konfiguracja w „Wspólne środowisko” w `README.md`.
+  `cloud-platform` + `analytics.readonly` + `webmasters.readonly`; konfiguracja w `docs/konfiguracja.md`.
   Konto usługi ma w projekcie tylko `bigquery.dataEditor` i `bigquery.jobUser`, w GA4 rolę Widz, w Search Console uprawnienie Ograniczone.
 - Datasety surowe mają prefiks `raw_` (np. `raw_nbp`) i lokalizację **EU** (`LOCATION` w `common/bigquery.py`) — polityka
   prywatności pmdata.pl obiecuje przechowywanie w UE. Lokalizacji nie da się zmienić: zła = usunąć dataset i backfill.

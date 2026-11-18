@@ -7,7 +7,7 @@
 #
 # Poświadczenia bez klucza JSON w sekretach: Workload Identity Federation.
 # GitHub wystawia krótkotrwały token OIDC, GCP wymienia go na token konta
-# ingest-runner (konfiguracja: README.md, „Automatyzacja w GitHub Actions”).
+# ingest-runner (konfiguracja: docs/konfiguracja.md).
 # ============================================================================
 name: Pipeline
 

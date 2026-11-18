@@ -4,7 +4,7 @@ Dzienne kliknięcia, wyświetlenia i pozycje pmdata.pl w Google. W etapie 7 to d
 
 ## Konfiguracja
 
-Najpierw [„Wspólne środowisko”](../README.md#wspólne-środowisko) — ADC z zakresem `webmasters.readonly`.
+Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko) — ADC z zakresem `webmasters.readonly`.
 
 ```bash
 PROJECT=api-ingestion-lab-bq
