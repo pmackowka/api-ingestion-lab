@@ -26,6 +26,11 @@ Stan na 2026-11-17: etap 1 (`nbp/`) działa, etapy 2–7 są planowane, ich fold
 Następny krok: etap 2 (`weather/`, Open-Meteo — bez klucza, ten sam wzorzec co NBP), potem etap 3 (`ga4/`,
 GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4 i property ID od Piotra). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
+Przy automatyzacji (po etapie 3): workflow `.github/workflows/pipeline.yml` (cron + `workflow_dispatch`, osobno od `ci.yml`),
+ingesty jako `strategy.matrix` z `fail-fast: false`, potem job `dbt` z `needs: ingest`. Razem z nim powstaje
+`docs/orkiestracja.md`: porównanie wariantów (matrix / osobny job na źródło / jeden job z krokami / osobny workflow
+na źródło / Airflow) z uzasadnieniem, dlaczego matrix — o to prosił Piotr. Warunek matrix: każdy `<system>/ingest.py`
+ma wspólny interfejs CLI (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
 
 ## Struktura
 
