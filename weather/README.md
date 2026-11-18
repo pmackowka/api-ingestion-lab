@@ -14,7 +14,7 @@ uv run python -m weather.ingest --project api-ingestion-lab-bq --lookback-days 7
 
 ## Konfiguracja
 
-Najpierw [„Wspólne środowisko”](../README.md#wspólne-środowisko). Open-Meteo nie wymaga klucza:
+Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko). Open-Meteo nie wymaga klucza:
 
 ```bash
 PROJECT=api-ingestion-lab-bq

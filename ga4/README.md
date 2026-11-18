@@ -4,7 +4,7 @@ Dzienne sesje według źródła ruchu i kliknięcia w kontakt na pmdata.pl. W et
 
 ## Konfiguracja
 
-Najpierw [„Wspólne środowisko”](../README.md#wspólne-środowisko) — ADC z zakresem `analytics.readonly`.
+Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko) — ADC z zakresem `analytics.readonly`.
 
 ```bash
 PROJECT=api-ingestion-lab-bq

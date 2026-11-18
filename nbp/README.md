@@ -17,7 +17,7 @@ uv run python -m nbp.ingest --project api-ingestion-lab-bq --start 2026-01-01 --
 
 ## Konfiguracja
 
-Najpierw [„Wspólne środowisko”](../README.md#wspólne-środowisko). NBP nie wymaga klucza:
+Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko). NBP nie wymaga klucza:
 
 ```bash
 PROJECT=api-ingestion-lab-bq
