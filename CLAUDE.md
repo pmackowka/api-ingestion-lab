@@ -23,14 +23,19 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
-Stan na 2026-11-18: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739) i 4 (`search_console/`, `sc-domain:pmdata.pl`) działają, etapy 5–7 są planowane, ich foldery jeszcze nie istnieją.
-Następny krok: etap 5 (`hubspot/`, HubSpot CRM API na darmowym koncie testowym dewelopera; dane syntetyczne
-ze źródłem leada według proporcji źródeł z GA4); po nim dopisać `hubspot` do `matrix.include` w `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-18: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`) i 5 (`hubspot/`, konto testowe HubSpot) działają; etapy 6–7 są planowane, ich foldery jeszcze nie istnieją.
+Następny krok: etap 6 (`odoo/`, Odoo w Dockerze) albo deale w HubSpot (wymagają scope `crm.schemas.deals.write` dla unikalnego klucza upsertu). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 3:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`; w etapie 7 dojdzie job `dbt` z `needs: ingest`. Uzasadnienie wariantu
 w `docs/orkiestracja.md` (matrix / osobny job na źródło / jeden job z krokami / osobny workflow na źródło / Airflow). Warunek matrix: każdy `<system>/ingest.py`
 ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
+
+Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypomnij Piotrowi:
+1. `npm uninstall -g @hubspot/cli` i usunięcie `~/.hscli/` (osobisty klucz dostępu CLI).
+2. Usunięcie `.env` z tokenem, sekretu `HUBSPOT_ACCESS_TOKEN` w GitHub, konta testowego, projektu aplikacji i klucza osobistego w HubSpot.
+3. Usunięcie reguły `Bash(uv run --env-file .env python -m hubspot.*)` z `.claude/settings.local.json` — przywraca blokadę
+   uruchamiania przez Claude Code kodu, który czyta tokeny z `.env`.
 
 ## Struktura
 
