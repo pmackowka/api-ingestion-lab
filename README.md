@@ -12,8 +12,8 @@ Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to inde
 |:-:|---|---|---|
 | 1<br>*działa* | [API NBP](https://api.nbp.pl/) — kursy walut, tabela A<br>[`nbp/`](nbp/README.md) | prawdziwe<br>(API otwarte) | • GET i JSON<br>• limit 93 dni → dzielenie zakresu na okna<br>• idempotentny zapis do BigQuery |
 | 2<br>*działa* | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) — pogoda historyczna (archiwum)<br>[`weather/`](weather/README.md) | prawdziwe<br>(API otwarte, użytek niekomercyjny) | • GET bez klucza, wiele lokalizacji w jednym zapytaniu<br>• strefa czasowa i granice doby (`timezone`)<br>• dane korygowane wstecz: reanaliza ERA5 z opóźnieniem 5 dni → lookback<br>• limit 10 000 wywołań dziennie |
-| 3<br>*planowany* | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl<br>`ga4/` | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
-| 4<br>*planowany* | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl<br>`search_console/` | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
+| 3<br>*działa* | [GA4 Data API](https://developers.google.com/analytics/devguides/reporting/data/v1) — ruch na pmdata.pl<br>[`ga4/`](ga4/README.md) | prawdziwe<br>(własna usługa GA4) | • konto usługi / ADC z dostępem do usługi GA4<br>• paginacja `limit`/`offset` (maks. 250 000 wierszy na zapytanie)<br>• limity tokenów (`returnPropertyQuota`)<br>• dane dopisywane wstecz → lookback |
+| 4<br>*działa* | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl<br>[`search_console/`](search_console/README.md) | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
 | 5<br>*planowany* | [HubSpot CRM API](https://developers.hubspot.com/docs/api/crm/understanding-the-crm) — kontakty, firmy, deale<br>`hubspot/` | syntetyczne<br>(darmowe konto testowe) | • bearer token aplikacji prywatnej<br>• źródło leada (UTM) losowane według proporcji źródeł z GA4<br>• paginacja kursorem (`after`)<br>• przyrost po `lastmodifieddate` przez search API<br>• limit zapytań → 429 i ponowienia |
 | 6<br>*planowany* | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury<br>`odoo/` | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
 | 7<br>*planowany* | Model w dbt na BigQuery<br>`model/` | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
@@ -27,13 +27,101 @@ Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to inde
 
 Jak łączą się źródła: GA4 Data API zwraca agregaty (dzień × źródło ruchu), nie pojedynczych użytkowników, a pmdata.pl nie ma formularza — są tylko kliknięcia w e-mail, telefon i LinkedIn. Dlatego złączenie jest na agregatach, po `data × źródło`: syntetyczne leady w HubSpot dostają źródło losowane według proporcji źródeł z GA4 (udział każdego źródła w kliknięciach w kontakt danego dnia), a ich dzienna liczba wynika z prawdziwych kliknięć w kontakt × założony współczynnik. Złączenie po identyfikatorze leada (backend generuje `lead_id`, wysyła go do CRM i do GA4) wymagałoby eksportu GA4 do BigQuery i jest poza zakresem.
 
+## Jak dane trafiają do BigQuery
+
+Wspólne dla wszystkich źródeł. Kod zapisu: [`common/bigquery.py`](common/bigquery.py); interfejs CLI: [`common/cli.py`](common/cli.py). Rzeczy specyficzne dla źródła są w README jego folderu.
+
+### Jedno uruchomienie krok po kroku (przykład: NBP)
+
+Pobranie i spłaszczenie są w `<system>/ingest.py` (każde źródło ma swoje), zapis (kroki 4a i 4b) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py). Każdy blok ma komentarz: co robi, po co i dlaczego tak. SQL z kroku 4b to tekst, który Python wysyła przez `client.query()`, a wykonuje BigQuery.
+
+Przykład: `--lookback-days 7` uruchomione 17.11.2026, tabela ma dane od 02.01.2025 do 14.11.2026, a NBP poprawiło kurs z 12.11.
+
+```
+ PYTHON (Twój Mac / runner)              BIGQUERY (serwery Google)
+ ──────────────────────────              ─────────────────────────────────────────
+
+ 1. parse_args + split_windows:
+    start = 17.11 − 7 = 10.11
+    end   = 17.11  (8 dni, jedno okno)
+
+ 2. fetch_window (API NBP)
+    → dni z notowaniami 10–17.11
+      (12.11 już w nowej wersji)
+
+ 3. to_rows: spłaszczenie
+    → 5 dni × 32 waluty = 160 wierszy
+      (11.11 święto, 15–16.11 weekend)
+
+ 4a. load_table_from_json ─────────────▶ _staging_exchange_rates_a
+     (WRITE_TRUNCATE)                    ┌───────────────────────┐
+                                         │ 10.11 … 17.11  (nowe) │  poprzednia zawartość
+                                         └───────────────────────┘  stagingu wyrzucona
+
+ 4b. client.query(rewrite_sql) ────────▶ wykonanie SQL:
+
+                exchange_rates_a (przed)              _staging
+                ┌──────────────────────┐              ┌───────────────┐
+                │ 02.01.2025 … 09.11   │──┐           │ 10.11 … 17.11 │
+                │ 10.11 … 14.11 (stare)│✗ │           └───────┬───────┘
+                └──────────────────────┘  │ WHERE NOT BETWEEN │
+                                          ▼                   ▼
+                                ┌──────────────────────────────────┐
+                                │ UNION ALL = sklejenie pod sobą   │
+                                │ 02.01.2025 … 09.11  (z tabeli)   │
+                                │ 10.11 … 17.11       (ze stagingu)│
+                                └────────────────┬─────────────────┘
+                                                 │ WRITE_TRUNCATE_DATA
+                                                 ▼
+                                exchange_rates_a (po) — zapisana od nowa w całości:
+                                historia skopiowana bez zmian, 10–17.11 wymienione
+```
+
+- Treść zmienia się tylko w zakresie `[start, end]`, ale BigQuery zapisuje całą tabelę od nowa — stąd koszt „cała tabela” w porównaniu strategii niżej. Historia pochodzi ze starej wersji tabeli, nie z API.
+- Bez filtra `NOT BETWEEN` dni 10–14.11 byłyby w tabeli dwa razy; bez części `SELECT … FROM exchange_rates_a` zostałby sam staging, czyli 8 dni.
+
+### Strategie ładowania
+
+Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą nowe. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan tabeli, więc restart, backfill ani podwójne uruchomienie nie tworzą duplikatów. Porównanie zakłada projekt z billingiem; kolumna „Sandbox” pokazuje, co działa tutaj (sprawdzone na żywo, listopad 2026).
+
+| Strategia | Mechanizm w BigQuery | Idempotentna | Koszt uruchomienia | Sandbox | Kiedy |
+|---|---|---|---|---|---|
+| Pełne przeładowanie | load całej historii, `WRITE_TRUNCATE` | tak | całe źródło | działa | małe tabele, słowniki, źródło usuwa rekordy |
+| Append | load, `WRITE_APPEND` | **nie** | nowe dane | działa | niezmienne zdarzenia + deduplikacja niżej (`QUALIFY ROW_NUMBER()` w dbt) |
+| Przepisanie z podmianą zakresu (**ten pipeline**) | `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | cała tabela | działa | małe tabele bez dostępu do DML |
+| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz: przeładuj ostatnie N dni |
+| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` (domyślna) | tak | skan celu; z filtrem partycji tylko jej część | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: zamówienia, CRM, CDC |
+| `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami |
+
+#### Przepisanie z podmianą zakresu — na czym polega i dlaczego tutaj
+
+**Mechanizm.** Każde uruchomienie buduje tabelę od nowa z dwóch części: wierszy, które już w niej są **poza** zakresem `[start, end]`, i świeżych wierszy z API **za** ten zakres (staging). Wynik zastępuje tabelę w jednym query jobie (diagram wyżej). Treść zmienia się tylko w zakresie; reszta jest przepisywana bez zmian ze starej wersji tabeli, nie pobierana ponownie z API.
+
+**Gwarancje.**
+- Idempotencja: stare wiersze z zakresu są odfiltrowane (`NOT BETWEEN`), więc każdy klucz z zakresu (np. `(effective_date, currency_code)` w NBP) pochodzi wyłącznie ze stagingu — ponowne uruchomienie nie tworzy duplikatów.
+- Atomowość: BigQuery podmienia tabelę dopiero po zakończeniu zapytania. Błąd w połowie zostawia poprzednią wersję w całości.
+- Usunięcia ze źródła: wiersz z zakresu, którego API już nie zwraca, znika z tabeli — `MERGE` bez klauzuli `WHEN NOT MATCHED BY SOURCE` by go zostawił.
+
+**Czy to typowe?** Nie jako nazwa — to robocza nazwa tego repo. Jako idea: tak, to podmiana zakresu, ta sama co w nadpisywaniu partycji (dbt `insert_overwrite`), tylko na poziomie całej tabeli zamiast partycji. W produkcji z billingiem standardem są `MERGE` albo nadpisanie partycji; przepisanie całej tabeli spotkasz przy małych tabelach referencyjnych (kursy, słowniki, kalendarze) i tam, gdzie DML jest niedostępny.
+
+**Dlaczego tutaj.**
+1. Sandbox odrzuca DML (`MERGE`, `DELETE`, `INSERT`) błędem 403. Query job z tabelą docelową to nie DML, więc działa.
+2. Nadpisanie partycji odpada: w sandboxie partycja wygasa 60 dni po **swojej dacie**, więc tabela partycjonowana po `effective_date` traci historię od razu po zapisie (sprawdzone na żywo).
+3. Pełne przeładowanie z API też by działało, ale przy każdym uruchomieniu pobierałoby całą historię oknami po 93 dni. Przepisanie pobiera z API tylko zakres — historię bierze z własnej tabeli.
+4. Skala to umożliwia: największa tabela (NBP) ma ok. 8 tys. wierszy rocznie, uruchomienie trwa ok. 7 s (zmierzone).
+
+**Koszt i ograniczenia.**
+- Każde uruchomienie skanuje i zapisuje całą tabelę, także przy `--lookback-days 7` — koszt rośnie z historią, nie z zakresem. Przy milionach wierszy to przestaje mieć sens.
+- Dwa równoległe uruchomienia czytają tę samą starą wersję, więc wygrywa to, które skończy później, a zmiany pierwszego przepadają. Przy jednym harmonogramie dziennym nie występuje.
+- Z billingiem zmieniłbym na partycje miesięczne po dacie + `MERGE` albo nadpisanie partycji; partycje dzienne z kilkudziesięcioma wierszami to przerost.
+
 ## Automatyzacja: gdzie uruchamiać ingest
 
 Skrypty z tego repo uruchamia się ręcznie. W pracy ten sam kod musi ruszać sam, według harmonogramu, z uprawnieniami do hurtowni i bez kluczy w repo. Tabela zestawia, gdzie go uruchomić, od wariantu darmowego po pełną orkiestrację. Konfiguracji tu nie wdrażamy.
 
 | # | Rozwiązanie | Koszt | Konfiguracja w skrócie&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Uwierzytelnianie do hurtowni | Kiedy wybrać / ograniczenia |
 |:-:|---|---|---|---|---|
-| 1 | **GitHub Actions** (cron) → BigQuery | 0 zł: publiczne repo za darmo, prywatne w ramach limitu GitHub Free ($12 miesięcznie) | 1. Pula Workload Identity Federation (WIF) + dostawca OIDC GitHuba<br>2. Konto usługi z rolami BigQuery Data Editor i Job User<br>3. Workflow z `on: schedule`, krok `google-github-actions/auth@v3`, potem `uv run python nbp/ingest.py --project <projekt-gcp> --lookback-days 7`<br>4. Cron po publikacji NBP (11:45–12:15 czasu PL), np. `0 12 * * 1-5` w UTC | token OIDC GitHuba → WIF → krótkotrwały token Google; workflow potrzebuje `id-token: write`. Zero kluczy w sekretach | nauka, małe joby, zespół już na GitHubie. Cron co najmniej co 5 min, bywa opóźniony przy obciążeniu; w publicznym repo GitHub wyłącza go po 60 dniach bez aktywności. Działa w sandboxie BigQuery, ale tam tabela wygasa po 60 dniach, a cron z lookbackiem odbuduje tylko ostatni tydzień — pełną historię trzeba wtedy doładować ręcznie (`--start`) |
+| 1 | **GitHub Actions** (cron) → BigQuery | 0 zł: publiczne repo za darmo, prywatne w ramach limitu GitHub Free ($12 miesięcznie) | 1. Pula Workload Identity Federation (WIF) + dostawca OIDC GitHuba<br>2. Konto usługi z rolami BigQuery Data Editor i Job User<br>3. Workflow z `on: schedule`, krok `google-github-actions/auth@v3`, potem `uv run python -m nbp.ingest --project <projekt-gcp> --lookback-days 7`<br>4. Cron po publikacji NBP (11:45–12:15 czasu PL), np. `0 12 * * 1-5` w UTC | token OIDC GitHuba → WIF → krótkotrwały token Google; workflow potrzebuje `id-token: write`. Zero kluczy w sekretach | nauka, małe joby, zespół już na GitHubie. Cron co najmniej co 5 min, bywa opóźniony przy obciążeniu; w publicznym repo GitHub wyłącza go po 60 dniach bez aktywności. Działa w sandboxie BigQuery, ale tam tabela wygasa po 60 dniach, a cron z lookbackiem odbuduje tylko ostatni tydzień — pełną historię trzeba wtedy doładować ręcznie (`--start`) |
 | 2 | **Cloud Run job + Cloud Scheduler** (GCP) | wymaga billingu. Job: płacisz za czas życia instancji (min. 1 min), 180 000 vCPU-s miesięcznie gratis; Scheduler: 3 joby gratis na konto rozliczeniowe | 1. `Dockerfile` → obraz w Artifact Registry<br>2. `gcloud run jobs deploy` z dedykowanym kontem usługi<br>3. Wyzwalacz Cloud Scheduler (cron) wołający endpoint `:run` | konto usługi przypięte do joba; biblioteka Google bierze poświadczenia z ADC w kontenerze, bez kluczy | standard GCP dla pojedynczego joba wsadowego. Timeout zadania do 168 h. Brak zależności między jobami — każdy harmonogram osobno |
 | 3 | **AWS: ECS Fargate + EventBridge Scheduler** | wymaga konta AWS; płacisz za czas zadania | 1. Obraz w ECR<br>2. Task definition z rolą IAM<br>3. Harmonogram w EventBridge Scheduler (cel: `ECS RunTask`), ponowienia i kolejka DLQ | rola IAM zadania. Do BigQuery: WIF z dostawcą AWS (bez kluczy). Hurtownia po stronie AWS: Redshift | organizacja na AWS. Krótkie joby można odpalać jako Lambda, ale jej limit to 15 min |
 | 4 | **Azure: Container Apps job** (typ `Schedule`) | wymaga subskrypcji Azure; płacisz za czas wykonania | 1. Obraz w Azure Container Registry<br>2. `az containerapp job create --trigger-type Schedule --cron-expression "..."` (cron w UTC)<br>3. Managed identity przypisana do joba | managed identity → token Microsoft Entra ID. Do BigQuery: WIF z dostawcą OIDC Entra ID | organizacja na Azure. Wbudowane ponowienia (`replica-retry-limit`) i timeout repliki |
@@ -86,12 +174,15 @@ gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --ro
 gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT --member=user:$ME --role=roles/iam.serviceAccountTokenCreator
 
 # 7. ADC = poświadczenia, które biblioteki Google biorą automatycznie. Od teraz każdy skrypt działa jako konto usługi.
-#    Zakres analytics.readonly potrzebny od etapu 3 (GA4); cloud-platform obejmuje BigQuery.
+#    Zakresy: cloud-platform (BigQuery), analytics.readonly (etap 3, GA4), webmasters.readonly (etap 4, Search Console).
+#    Nowy zakres = to samo logowanie jeszcze raz z pełną listą.
 gcloud auth application-default login --impersonate-service-account=$SA \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/analytics.readonly"
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/analytics.readonly,https://www.googleapis.com/auth/webmasters.readonly"
 
 # 8. Kontrola: zwraca token = ADC działa.
 gcloud auth application-default print-access-token > /dev/null && echo "ADC OK"
 ```
+
+Datasety powstają same przy pierwszym uruchomieniu, w lokalizacji `EU` (`LOCATION` w [`common/bigquery.py`](common/bigquery.py)). Lokalizacji datasetu nie da się zmienić po utworzeniu — jeśli istnieje w innej, skrypt przerwie z błędem.
 
 Dalej: sekcja „Konfiguracja” w README konkretnego folderu (kroki specyficzne dla źródła).

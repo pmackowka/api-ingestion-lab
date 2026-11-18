@@ -23,24 +23,29 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
-Stan na 2026-11-18: etapy 1 (`nbp/`) i 2 (`weather/`) działają, etapy 3–7 są planowane, ich foldery jeszcze nie istnieją.
-Następny krok: etap 3 (`ga4/`, GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4
-i property ID od Piotra). Przy nim wydzielić wspólny `load_to_bigquery` (dziś skopiowany w nbp/ i weather/). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-18: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739) i 4 (`search_console/`, `sc-domain:pmdata.pl`) działają, etapy 5–7 są planowane, ich foldery jeszcze nie istnieją.
+Następny krok: etap 5 (`hubspot/`, HubSpot CRM API na darmowym koncie testowym dewelopera; dane syntetyczne
+ze źródłem leada według proporcji źródeł z GA4). Po etapie 4 są już 4 źródła — można też zrobić `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Przy automatyzacji (po etapie 3): workflow `.github/workflows/pipeline.yml` (cron + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`, potem job `dbt` z `needs: ingest`. Razem z nim powstaje
 `docs/orkiestracja.md`: porównanie wariantów (matrix / osobny job na źródło / jeden job z krokami / osobny workflow
 na źródło / Airflow) z uzasadnieniem, dlaczego matrix — o to prosił Piotr. Warunek matrix: każdy `<system>/ingest.py`
-ma wspólny interfejs CLI (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
+ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
 
 ## Struktura
 
-- `README.md` — indeks połączeń, porównanie miejsc uruchamiania (automatyzacja) + wspólne środowisko.
+- `README.md` — indeks połączeń, wspólny przepływ zapisu (diagram, strategie ładowania), automatyzacja, wspólne środowisko.
+  Zasada: to, co dotyczy wszystkich źródeł, idzie do głównego README; to, co specyficzne dla źródła — do README folderu.
 - `<system>/` — jeden folder na źródło, będący pakietem: `__init__.py`, `ingest.py`, `test_ingest.py`, `README.md`.
   Testy importują `from <system>.ingest import ...` — bez `__init__.py` dwa pliki `test_ingest.py`
   w różnych folderach wywracają pytest (`import file mismatch`).
 - `<system>/README.md` — przykładowe uruchomienia, źródło i jego sprawdzone zachowanie,
   jak działa jedno uruchomienie (diagram), schemat tabeli docelowej, strategia ładowania i jej uzasadnienie.
+- `common/` — kod wspólny dla źródeł: `bigquery.py` (zapis z podmianą zakresu), `cli.py` (interfejs CLI),
+  `http.py` (sesja z tokenem z ADC i ponowieniami dla API Google).
+  Wydzielony przy trzecim źródle. Dlatego skrypty uruchamia się jako moduły: `python -m <system>.ingest`
+  (`python <system>/ingest.py` nie widzi pakietu `common`).
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP.
 
@@ -50,9 +55,9 @@ ma wspólny interfejs CLI (`--project`, `--start`/`--lookback-days`, `--end`, `-
 uv sync                                                            # zależności
 uv run pytest                                                      # wszystkie testy (to samo co CI)
 uv run pytest nbp                                                  # testy jednego folderu
-uv run python nbp/ingest.py --project api-ingestion-lab-bq --start 2025-01-01   # backfill NBP
-uv run python nbp/ingest.py --project api-ingestion-lab-bq --lookback-days 7     # przyrost NBP
-uv run python weather/ingest.py --project api-ingestion-lab-bq --lookback-days 7 # przyrost pogody
+uv run python -m nbp.ingest --project api-ingestion-lab-bq --start 2025-01-01   # backfill NBP
+uv run python -m nbp.ingest --project api-ingestion-lab-bq --lookback-days 7     # przyrost NBP
+uv run python -m weather.ingest --project api-ingestion-lab-bq --lookback-days 7 # przyrost pogody
 ```
 
 Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
@@ -61,11 +66,13 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 - Projekt: `api-ingestion-lab-bq`, **sandbox BigQuery bez billingu**. Konsekwencje:
   - brak DML (`MERGE`, `INSERT`, `UPDATE`, `DELETE`) — idempotencję robimy query jobem z tabelą
-    docelową i `WRITE_TRUNCATE_DATA` (wzorzec w `nbp/ingest.py`, `load_to_bigquery`);
+    docelową i `WRITE_TRUNCATE_DATA` (`common/bigquery.py`, `replace_date_range`, używany przez wszystkie źródła);
   - tabele wygasają po 60 dniach — po wygaśnięciu ingest uruchamia się ponownie z pełnym zakresem.
-- Poświadczenia: ADC (`gcloud auth application-default login`), quota project ustawiony na
-  `api-ingestion-lab-bq`. Błąd 400 „Project ... not found or deleted” = zły quota project w ADC.
-- Datasety surowe mają prefiks `raw_` (np. `raw_nbp`).
+- Poświadczenia: ADC z podszywaniem się pod konto usługi `ingest-runner` (bez pliku z kluczem), zakresy
+  `cloud-platform` + `analytics.readonly` + `webmasters.readonly`; konfiguracja w „Wspólne środowisko” w `README.md`.
+  Konto usługi ma w projekcie tylko `bigquery.dataEditor` i `bigquery.jobUser`, w GA4 rolę Widz, w Search Console uprawnienie Ograniczone.
+- Datasety surowe mają prefiks `raw_` (np. `raw_nbp`) i lokalizację **EU** (`LOCATION` w `common/bigquery.py`) — polityka
+  prywatności pmdata.pl obiecuje przechowywanie w UE. Lokalizacji nie da się zmienić: zła = usunąć dataset i backfill.
 
 ## Konwencje
 
