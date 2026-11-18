@@ -1,12 +1,10 @@
 # api-ingestion-lab
 
-Pobieranie danych z API (głównie REST) w Pythonie i ładowanie ich do BigQuery. Projekt do nauki inżynierii danych: każde połączenie to osobny, niezależny pipeline w swoim folderze, z komentarzami po polsku, które tłumaczą mechanizm.
-
-Kierunek: dane, z którymi pracuje analityk internetowy, połączone z danymi biznesowymi: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → zamówienie i faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda).
+Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze, z komentarzami po polsku tłumaczącymi mechanizm. Kierunek: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda).
 
 ## Połączenia
 
-Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to indeks.
+Każdy folder ma własny README z konfiguracją krok po kroku.
 
 | Etap | System i folder | Dane i dostęp | Czego uczy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
 |:-:|---|---|---|
@@ -18,25 +16,24 @@ Każdy folder ma własny README z konfiguracją krok po kroku. Ta tabela to inde
 | 6<br>*planowany* | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — zamówienia, faktury<br>`odoo/` | syntetyczne<br>(open source lokalnie) | • Docker: Odoo + PostgreSQL z danymi demo<br>• JSON-2 API z kluczem API<br>• przyrost po `write_date`, rekordy zmieniane i usuwane<br>• baza transakcyjna → CDC z PostgreSQL |
 | 7<br>*planowany* | Model w dbt na BigQuery<br>`model/` | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
 
-**Dane i dostęp** — co faktycznie trafi do BigQuery i skąd:
+**Dane i dostęp:**
 
-- *prawdziwe (API otwarte)* — produkcyjne dane źródła, dostępne dla każdego bez klucza. NBP to produkcyjne API, nie sandbox. Open-Meteo za darmo tylko do użytku niekomercyjnego. Alternatywa IMGW (`danepubliczne.imgw.pl/api/data/synop`) zwraca tylko ostatni pomiar, bez historii — nie nadaje się do backfillu.
-- *prawdziwe (własna usługa)* — realny ruch z pmdata.pl. Strona to nie sklep, więc „konwersją” jest kontakt, nie zakup.
-- *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types) (darmowe, wygasa po 90 dniach bez wywołań API). Dane wgrywa nasz skrypt.
-- *syntetyczne (open source lokalnie)* — prawdziwe oprogramowanie uruchomione u siebie; dane demo Odoo plus dogenerowane rekordy. ERP to Odoo, bo SAP i popularne polskie systemy ERP nie mają darmowego środowiska z API; Odoo daje ten sam typ danych (zamówienia, faktury, rekordy zmieniane i usuwane) i bazę PostgreSQL do ćwiczenia CDC.
+- *prawdziwe (API otwarte)* — produkcyjne dane bez klucza; Open-Meteo za darmo tylko do użytku niekomercyjnego.
+- *prawdziwe (własna usługa)* — ruch z pmdata.pl; strona nie jest sklepem, więc „konwersją” jest kontakt.
+- *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types); dane wgrywa nasz skrypt.
+- *syntetyczne (open source lokalnie)* — Odoo z danymi demo; SAP i polskie ERP nie mają darmowego środowiska z API, a Odoo daje te same typy danych i PostgreSQL do ćwiczenia CDC.
 
-Jak łączą się źródła: GA4 Data API zwraca agregaty (dzień × źródło ruchu), nie pojedynczych użytkowników, a pmdata.pl nie ma formularza — są tylko kliknięcia w e-mail, telefon i LinkedIn. Dlatego złączenie jest na agregatach, po `data × źródło`: syntetyczne leady w HubSpot dostają źródło losowane według proporcji źródeł z GA4 (udział każdego źródła w kliknięciach w kontakt danego dnia), a ich dzienna liczba wynika z prawdziwych kliknięć w kontakt × założony współczynnik. Złączenie po identyfikatorze leada (backend generuje `lead_id`, wysyła go do CRM i do GA4) wymagałoby eksportu GA4 do BigQuery i jest poza zakresem.
+Jak łączą się źródła: GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Złączenie jest więc po `data × źródło`: syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik.
 
 ## Jak dane trafiają do BigQuery
 
-Wspólne dla wszystkich źródeł. Kod zapisu: [`common/bigquery.py`](common/bigquery.py); interfejs CLI: [`common/cli.py`](common/cli.py). Rzeczy specyficzne dla źródła są w README jego folderu.
+Pobranie i spłaszczenie są w `<system>/ingest.py`, zapis (kroki 4a i 4b) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py), interfejs CLI w [`common/cli.py`](common/cli.py).
 
 ### Jedno uruchomienie krok po kroku (przykład: NBP)
 
-Pobranie i spłaszczenie są w `<system>/ingest.py` (każde źródło ma swoje), zapis (kroki 4a i 4b) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py). Każdy blok ma komentarz: co robi, po co i dlaczego tak. SQL z kroku 4b to tekst, który Python wysyła przez `client.query()`, a wykonuje BigQuery.
+`--lookback-days 7` uruchomione 17.11.2026; tabela ma dane od 02.01.2025 do 14.11.2026, a NBP poprawiło kurs z 12.11.
 
-Przykład: `--lookback-days 7` uruchomione 17.11.2026, tabela ma dane od 02.01.2025 do 14.11.2026, a NBP poprawiło kurs z 12.11.
-
+```
 ```
  PYTHON (Twój Mac / runner)              BIGQUERY (serwery Google)
  ──────────────────────────              ─────────────────────────────────────────
@@ -76,71 +73,91 @@ Przykład: `--lookback-days 7` uruchomione 17.11.2026, tabela ma dane od 02.01.2
                                 exchange_rates_a (po) — zapisana od nowa w całości:
                                 historia skopiowana bez zmian, 10–17.11 wymienione
 ```
+```
 
-- Treść zmienia się tylko w zakresie `[start, end]`, ale BigQuery zapisuje całą tabelę od nowa — stąd koszt „cała tabela” w porównaniu strategii niżej. Historia pochodzi ze starej wersji tabeli, nie z API.
-- Bez filtra `NOT BETWEEN` dni 10–14.11 byłyby w tabeli dwa razy; bez części `SELECT … FROM exchange_rates_a` zostałby sam staging, czyli 8 dni.
+Treść zmienia się tylko w zakresie `[start, end]`, ale BigQuery zapisuje całą tabelę od nowa; historia pochodzi ze starej wersji tabeli, nie z API. Bez `NOT BETWEEN` dni 10–14.11 byłyby dwa razy.
 
 ### Strategie ładowania
 
-Strategia mówi, co zrobić z danymi już obecnymi w tabeli, gdy przychodzą nowe. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan tabeli, więc restart, backfill ani podwójne uruchomienie nie tworzą duplikatów. Porównanie zakłada projekt z billingiem; kolumna „Sandbox” pokazuje, co działa tutaj (sprawdzone na żywo, listopad 2026).
+Strategia mówi, co zrobić z wierszami już obecnymi w tabeli. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan, bez duplikatów. Kolumna „Sandbox” — sprawdzone na żywo, listopad 2026.
 
 | Strategia | Mechanizm w BigQuery | Idempotentna | Koszt uruchomienia | Sandbox | Kiedy |
 |---|---|---|---|---|---|
 | Pełne przeładowanie | load całej historii, `WRITE_TRUNCATE` | tak | całe źródło | działa | małe tabele, słowniki, źródło usuwa rekordy |
 | Append | load, `WRITE_APPEND` | **nie** | nowe dane | działa | niezmienne zdarzenia + deduplikacja niżej (`QUALIFY ROW_NUMBER()` w dbt) |
 | Przepisanie z podmianą zakresu (**ten pipeline**) | `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | cała tabela | działa | małe tabele bez dostępu do DML |
-| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz: przeładuj ostatnie N dni |
-| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` (domyślna) | tak | skan celu; z filtrem partycji tylko jej część | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: zamówienia, CRM, CDC |
+| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz |
+| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` | tak | skan celu albo partycji | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: CRM, CDC |
 | `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami |
 
 #### Przepisanie z podmianą zakresu — na czym polega i dlaczego tutaj
 
-**Mechanizm.** Każde uruchomienie buduje tabelę od nowa z dwóch części: wierszy, które już w niej są **poza** zakresem `[start, end]`, i świeżych wierszy z API **za** ten zakres (staging). Wynik zastępuje tabelę w jednym query jobie (diagram wyżej). Treść zmienia się tylko w zakresie; reszta jest przepisywana bez zmian ze starej wersji tabeli, nie pobierana ponownie z API.
+Każde uruchomienie buduje tabelę z wierszy **spoza** `[start, end]` i świeżych wierszy z API **za** ten zakres, w jednym query jobie. Gwarancje: idempotencja (stare wiersze z zakresu odfiltrowane), atomowość (błąd zostawia poprzednią wersję), usunięcia ze źródła znikają też z tabeli. To ta sama idea co dbt `insert_overwrite`, tylko na całej tabeli zamiast partycji.
 
-**Gwarancje.**
-- Idempotencja: stare wiersze z zakresu są odfiltrowane (`NOT BETWEEN`), więc każdy klucz z zakresu (np. `(effective_date, currency_code)` w NBP) pochodzi wyłącznie ze stagingu — ponowne uruchomienie nie tworzy duplikatów.
-- Atomowość: BigQuery podmienia tabelę dopiero po zakończeniu zapytania. Błąd w połowie zostawia poprzednią wersję w całości.
-- Usunięcia ze źródła: wiersz z zakresu, którego API już nie zwraca, znika z tabeli — `MERGE` bez klauzuli `WHEN NOT MATCHED BY SOURCE` by go zostawił.
+Dlaczego tutaj:
+1. Sandbox odrzuca DML (`MERGE`, `DELETE`, `INSERT`) błędem 403; query job z tabelą docelową to nie DML.
+2. Partycje odpadają: w sandboxie partycja wygasa 60 dni po **swojej dacie**, więc historia znika od razu po zapisie.
+3. Pełne przeładowanie pobierałoby z API całą historię przy każdym uruchomieniu; przepisanie pobiera tylko zakres.
+4. Skala na to pozwala: największa tabela (NBP) ma ok. 8 tys. wierszy rocznie, uruchomienie trwa ok. 7 s.
 
-**Czy to typowe?** Nie jako nazwa — to robocza nazwa tego repo. Jako idea: tak, to podmiana zakresu, ta sama co w nadpisywaniu partycji (dbt `insert_overwrite`), tylko na poziomie całej tabeli zamiast partycji. W produkcji z billingiem standardem są `MERGE` albo nadpisanie partycji; przepisanie całej tabeli spotkasz przy małych tabelach referencyjnych (kursy, słowniki, kalendarze) i tam, gdzie DML jest niedostępny.
-
-**Dlaczego tutaj.**
-1. Sandbox odrzuca DML (`MERGE`, `DELETE`, `INSERT`) błędem 403. Query job z tabelą docelową to nie DML, więc działa.
-2. Nadpisanie partycji odpada: w sandboxie partycja wygasa 60 dni po **swojej dacie**, więc tabela partycjonowana po `effective_date` traci historię od razu po zapisie (sprawdzone na żywo).
-3. Pełne przeładowanie z API też by działało, ale przy każdym uruchomieniu pobierałoby całą historię oknami po 93 dni. Przepisanie pobiera z API tylko zakres — historię bierze z własnej tabeli.
-4. Skala to umożliwia: największa tabela (NBP) ma ok. 8 tys. wierszy rocznie, uruchomienie trwa ok. 7 s (zmierzone).
-
-**Koszt i ograniczenia.**
-- Każde uruchomienie skanuje i zapisuje całą tabelę, także przy `--lookback-days 7` — koszt rośnie z historią, nie z zakresem. Przy milionach wierszy to przestaje mieć sens.
-- Dwa równoległe uruchomienia czytają tę samą starą wersję, więc wygrywa to, które skończy później, a zmiany pierwszego przepadają. Przy jednym harmonogramie dziennym nie występuje.
-- Z billingiem zmieniłbym na partycje miesięczne po dacie + `MERGE` albo nadpisanie partycji; partycje dzienne z kilkudziesięcioma wierszami to przerost.
+Ograniczenia: koszt rośnie z całą tabelą, nie z zakresem, a dwa równoległe uruchomienia nadpisałyby się nawzajem. Z billingiem: partycje miesięczne + `MERGE` albo nadpisanie partycji.
 
 ## Automatyzacja: gdzie uruchamiać ingest
 
-Skrypty z tego repo uruchamia się ręcznie. W pracy ten sam kod musi ruszać sam, według harmonogramu, z uprawnieniami do hurtowni i bez kluczy w repo. Tabela zestawia, gdzie go uruchomić, od wariantu darmowego po pełną orkiestrację. Konfiguracji tu nie wdrażamy.
+Wdrożony jest wiersz 1 ([niżej](#automatyzacja-w-github-actions)); pozostałe są do porównania.
 
-| # | Rozwiązanie | Koszt | Konfiguracja w skrócie&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Uwierzytelnianie do hurtowni | Kiedy wybrać / ograniczenia |
-|:-:|---|---|---|---|---|
-| 1 | **GitHub Actions** (cron) → BigQuery | 0 zł: publiczne repo za darmo, prywatne w ramach limitu GitHub Free ($12 miesięcznie) | 1. Pula Workload Identity Federation (WIF) + dostawca OIDC GitHuba<br>2. Konto usługi z rolami BigQuery Data Editor i Job User<br>3. Workflow z `on: schedule`, krok `google-github-actions/auth@v3`, potem `uv run python -m nbp.ingest --project <projekt-gcp> --lookback-days 7`<br>4. Cron po publikacji NBP (11:45–12:15 czasu PL), np. `0 12 * * 1-5` w UTC | token OIDC GitHuba → WIF → krótkotrwały token Google; workflow potrzebuje `id-token: write`. Zero kluczy w sekretach | nauka, małe joby, zespół już na GitHubie. Cron co najmniej co 5 min, bywa opóźniony przy obciążeniu; w publicznym repo GitHub wyłącza go po 60 dniach bez aktywności. Działa w sandboxie BigQuery, ale tam tabela wygasa po 60 dniach, a cron z lookbackiem odbuduje tylko ostatni tydzień — pełną historię trzeba wtedy doładować ręcznie (`--start`) |
-| 2 | **Cloud Run job + Cloud Scheduler** (GCP) | wymaga billingu. Job: płacisz za czas życia instancji (min. 1 min), 180 000 vCPU-s miesięcznie gratis; Scheduler: 3 joby gratis na konto rozliczeniowe | 1. `Dockerfile` → obraz w Artifact Registry<br>2. `gcloud run jobs deploy` z dedykowanym kontem usługi<br>3. Wyzwalacz Cloud Scheduler (cron) wołający endpoint `:run` | konto usługi przypięte do joba; biblioteka Google bierze poświadczenia z ADC w kontenerze, bez kluczy | standard GCP dla pojedynczego joba wsadowego. Timeout zadania do 168 h. Brak zależności między jobami — każdy harmonogram osobno |
-| 3 | **AWS: ECS Fargate + EventBridge Scheduler** | wymaga konta AWS; płacisz za czas zadania | 1. Obraz w ECR<br>2. Task definition z rolą IAM<br>3. Harmonogram w EventBridge Scheduler (cel: `ECS RunTask`), ponowienia i kolejka DLQ | rola IAM zadania. Do BigQuery: WIF z dostawcą AWS (bez kluczy). Hurtownia po stronie AWS: Redshift | organizacja na AWS. Krótkie joby można odpalać jako Lambda, ale jej limit to 15 min |
-| 4 | **Azure: Container Apps job** (typ `Schedule`) | wymaga subskrypcji Azure; płacisz za czas wykonania | 1. Obraz w Azure Container Registry<br>2. `az containerapp job create --trigger-type Schedule --cron-expression "..."` (cron w UTC)<br>3. Managed identity przypisana do joba | managed identity → token Microsoft Entra ID. Do BigQuery: WIF z dostawcą OIDC Entra ID | organizacja na Azure. Wbudowane ponowienia (`replica-retry-limit`) i timeout repliki |
-| 5 | **Databricks: Lakeflow Jobs** | wymaga workspace'u Databricks | 1. Plik `.py` w repo albo workspace<br>2. Job z zadaniem typu Python script<br>3. Wyzwalacz czasowy (cron) albo zdarzeniowy (nowe pliki w storage) | `ingest.py` jako Python script task pisze do BigQuery biblioteką `google-cloud-bigquery`, z poświadczeniami Google przez WIF (dostawca AWS albo Entra ID). Eksperymentalny konektor Spark z kluczem JSON jest potrzebny tylko do zapisu DataFrame'ów Spark | organizacja z lakehouse'em na Databricks; tam hurtownią zwykle jest sam Databricks (tabele Delta w Unity Catalog), a BigQuery to wyjątek |
-| 6 | **Airflow: Cloud Composer** (Managed Service for Apache Airflow, GCP) | wymaga billingu; płacisz za zasoby środowiska w trybie ciągłym, także bez uruchomień | 1. Środowisko Composer (Airflow 2 albo 3)<br>2. Plik DAG-a w buckecie środowiska<br>3. Zadania: `CloudRunExecuteJobOperator` odpala ingest z wiersza 2, potem dbt | konto usługi środowiska; ingest działa na koncie usługi Cloud Run joba | wiele zależnych kroków, ponowienia per zadanie, backfill zakresu dat, jeden widok stanu całego potoku. Dla jednego skryptu to przerost. Odpowiednik na AWS: Amazon MWAA |
+| # | Rozwiązanie | Koszt | Uwierzytelnianie do BigQuery | Kiedy wybrać / ograniczenia |
+|:-:|---|---|---|---|
+| 1 | **GitHub Actions** (cron) | 0 zł: publiczne repo za darmo, prywatne w limicie GitHub Free | token OIDC → WIF → krótkotrwały token konta usługi, zero kluczy | małe joby, zespół na GitHubie. Cron bywa opóźniony; w publicznym repo wyłącza się po 60 dniach bez aktywności |
+| 2 | **Cloud Run job + Cloud Scheduler** | billing; 180 000 vCPU-s miesięcznie i 3 harmonogramy gratis | konto usługi przypięte do joba | standard GCP dla joba wsadowego; brak zależności między jobami |
+| 3 | **AWS: ECS Fargate + EventBridge Scheduler** | konto AWS, płacisz za czas zadania | rola IAM → WIF z dostawcą AWS | organizacja na AWS; Lambda tylko do 15 min |
+| 4 | **Azure: Container Apps job** | subskrypcja Azure, płacisz za czas | managed identity → WIF z Entra ID | organizacja na Azure; wbudowane ponowienia |
+| 5 | **Databricks: Lakeflow Jobs** | workspace Databricks | WIF (dostawca AWS albo Entra ID) | lakehouse na Databricks — tam hurtownią zwykle jest sam Databricks |
+| 6 | **Airflow: Cloud Composer** | billing, środowisko płatne także bez uruchomień | konto usługi środowiska | wiele zależnych kroków, backfill zakresu dat, stan całego potoku. Dla kilku skryptów przerost |
+
+### Automatyzacja w GitHub Actions
+
+Workflow [`.github/workflows/pipeline.yml`](.github/workflows/pipeline.yml) codziennie o 3:41 czasu polskiego uruchamia każde źródło z `--lookback-days 7` jako osobny job macierzy — awaria jednego nie zatrzymuje pozostałych. Porównanie wariantów: [docs/orkiestracja.md](docs/orkiestracja.md).
+
+Konfiguracja (raz, po „Wspólnym środowisku”):
+
+```bash
+PROJECT=api-ingestion-lab-bq
+REPO=<właściciel>/<repo>                 # repo na GitHubie, np. pmackowka/api-ingestion-lab
+SA=ingest-runner@$PROJECT.iam.gserviceaccount.com
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format="value(projectNumber)")   # ścieżki WIF wymagają numeru, nie ID
+
+# 1. API do wymiany tokenów (STS) i wystawiania tokenów konta usługi.
+gcloud services enable sts.googleapis.com iamcredentials.googleapis.com --project=$PROJECT
+
+# 2. Pula Workload Identity: miejsce w GCP na tożsamości spoza Google (tu: GitHub).
+gcloud iam workload-identity-pools create github --project=$PROJECT --location=global --display-name="GitHub Actions Pool"
+
+# 3. Dostawca OIDC: ufa tokenom GitHuba, mapuje ich pola na atrybuty i wpuszcza tylko jedno repo.
+gcloud iam workload-identity-pools providers create-oidc api-ingestion-lab --project=$PROJECT --location=global \
+  --workload-identity-pool=github --display-name="GitHub api-ingestion-lab" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
+  --attribute-condition="assertion.repository == '$REPO'"
+
+# 4. Repo może działać jako konto usługi — z jego dostępem do BigQuery, GA4 i Search Console.
+gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/$REPO"
+
+# 5. Wartość do pola workload_identity_provider w pipeline.yml.
+gcloud iam workload-identity-pools providers describe api-ingestion-lab --project=$PROJECT --location=global --workload-identity-pool=github --format="value(name)"
+
+# 6. Ręczny przebieg testowy i podgląd na żywo.
+gh workflow run pipeline.yml && gh run watch
+```
+
+Źródło komend: [google-github-actions/auth — WIF przez konto usługi](https://github.com/google-github-actions/auth#indirect-wif) (sprawdzone 2026-11-18). Wariant przez konto usługi, a nie bezpośredni, bo GA4 i Search Console nadają dostęp po adresie e-mail, a ten ma tylko konto usługi.
 
 ### Scenariusz dla Airflow (wiersz 6)
 
-Dzienny potok etapu 6: przychód w PLN przypisany do źródła ruchu. Jeden DAG, harmonogram codziennie rano:
+Jeden DAG dziennie: równoległe ingesty jako Cloud Run joby (`CloudRunExecuteJobOperator`) z ponowieniami per źródło → `dbt build` dopiero po wszystkich → testy dbt jako bramka → alert przy porażce, a zadania zależne dostają `upstream_failed`. Zależności i ponowienia ma też GitHub Actions (`needs:`, „Re-run failed jobs”); Airflow wygrywa datą logiczną przebiegu, stanem per zadanie i backfillem zakresu dat jednym poleceniem.
 
-1. **Równolegle ingesty** jako Cloud Run joby (`CloudRunExecuteJobOperator`): NBP, pogoda, GA4, Search Console, HubSpot i Odoo. Każdy z lookbackiem kilku dni (dla NBP: `--lookback-days 7`) i idempotentnym zapisem, więc ponowienie zadania jest bezpieczne.
-2. **Ponowienia per źródło.** HubSpot przy przekroczeniu limitu zwraca 429 — ingest czeka i ponawia, a Airflow pilnuje timeoutu i liczby prób, nie blokując pozostałych źródeł.
-3. **`dbt build`** dopiero gdy wszystkie ingesty się powiodą: modele łączą po `data × źródło` sesje i kliknięcia w kontakt z leadami, dealami i fakturami, przeliczają EUR na PLN kursem NBP dołączają pogodę jako wymiar dnia i wyrównują strefy czasowe.
-4. **Testy dbt** jako bramka: np. faktura bez dealu albo deal bez kontaktu powyżej progu zatrzymuje potok przed publikacją.
-5. **Alert przy porażce** dowolnego zadania. Zadania zależne dostają stan `upstream_failed` i nie ruszają, więc nic nie liczy się na niepełnych danych. Po naprawie czyścisz nieudane zadanie razem z zadaniami zależnymi (Clear → Downstream) i Airflow uruchamia je ponownie — samo się to nie wznowi.
-
-Zależności i ponowienie nieudanego kroku da się zrobić też w GitHub Actions (`needs:`, „Re-run failed jobs”). Airflow wygrywa gdzie indziej: każdy przebieg ma swoją datę logiczną i stan per zadanie, a backfill zakresu dat to jedno polecenie (`airflow backfill create --dag-id ... --from-date ... --to-date ...` w Airflow 3, `airflow dags backfill` w Airflow 2).
-
-Źródła (sprawdzone 2026-11-16): [NBP – terminy publikacji kursów](https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/informacja-o-terminach-publikacji-kursow-walut/), [Airflow – backfill](https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/backfill.html), [GitHub Actions – schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), [GitHub Actions – rozliczenia](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Cloud Run jobs](https://docs.cloud.google.com/run/docs/create-jobs), [Cloud Run – ceny](https://cloud.google.com/run/pricing), [Cloud Scheduler – ceny](https://cloud.google.com/scheduler/pricing), [WIF z AWS i Azure](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds), [EventBridge Scheduler + ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/tasks-scheduled-eventbridge-scheduler.html), [Lambda – timeout](https://docs.aws.amazon.com/lambda/latest/dg/configuration-timeout.html), [Container Apps jobs](https://learn.microsoft.com/en-us/azure/container-apps/jobs), [Lakeflow Jobs](https://docs.databricks.com/aws/en/jobs/), [Databricks → BigQuery](https://docs.databricks.com/aws/en/connect/external-systems/bigquery), [Composer – ceny](https://cloud.google.com/composer/pricing), [CloudRunExecuteJobOperator](https://airflow.apache.org/docs/apache-airflow-providers-google/stable/operators/cloud/cloud_run.html), [Amazon MWAA](https://docs.aws.amazon.com/mwaa/latest/userguide/what-is-mwaa.html).
+Źródła (sprawdzone 2026-11-16): [GitHub Actions – schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), [GitHub Actions – rozliczenia](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Cloud Run – ceny](https://cloud.google.com/run/pricing), [Cloud Scheduler – ceny](https://cloud.google.com/scheduler/pricing), [WIF z AWS i Azure](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds), [Lambda – timeout](https://docs.aws.amazon.com/lambda/latest/dg/configuration-timeout.html), [Databricks → BigQuery](https://docs.databricks.com/aws/en/connect/external-systems/bigquery), [Composer – ceny](https://cloud.google.com/composer/pricing), [Airflow – backfill](https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/backfill.html).
 
 ## Wspólne środowisko
 
