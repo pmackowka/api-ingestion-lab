@@ -17,6 +17,23 @@ uv run python weather/ingest.py --project api-ingestion-lab-bq --lookback-days 7
 uv run python weather/ingest.py --project api-ingestion-lab-bq --start 2026-01-01 --end 2026-03-31
 ```
 
+## Konfiguracja
+
+Najpierw „Wspólne środowisko” z [głównego README](../README.md#wspólne-środowisko). Open-Meteo nie wymaga klucza ani dodatkowego API, więc zostaje tylko pierwsze uruchomienie i kontrola:
+
+```bash
+PROJECT=api-ingestion-lab-bq   # Twój projekt GCP
+
+# 1. Backfill: dataset raw_weather i tabele powstają same przy pierwszym uruchomieniu.
+uv run python weather/ingest.py --project $PROJECT --start 2025-01-01
+
+# 2. Kontrola duplikatów: obie liczby muszą być równe (klucz: dzień + miasto).
+bq query --use_legacy_sql=false "SELECT COUNT(*), COUNT(DISTINCT FORMAT('%t|%s', weather_date, location_id)) FROM \`$PROJECT.raw_weather.daily_weather\`"
+
+# 3. Testy jednostkowe (bez sieci i bez GCP).
+uv run pytest weather
+```
+
 ## Źródło
 
 - Endpoint: `GET https://archive-api.open-meteo.com/v1/archive`, bez klucza. [Dokumentacja](https://open-meteo.com/en/docs/historical-weather-api). Za darmo tylko do użytku niekomercyjnego, do 10 000 wywołań dziennie.

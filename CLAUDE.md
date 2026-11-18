@@ -14,14 +14,15 @@ tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
 
 Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): pogoda z Open-Meteo,
 GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
-dane demo), model w dbt. Wybór wynika z przeglądu ogłoszeń DE z dbt z 2026-11-17 (sekcja w `README.md`).
+dane demo), model w dbt. Repo może stać się publiczne:
+żadnych odniesień do szukania pracy, ogłoszeń ani nazw firm w plikach repo.
 Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 Złączenie GA4 z CRM jest na agregatach `data × źródło` (Data API nie ma użytkowników, strona nie ma formularza);
 syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen z kliknięć w kontakt.
 
 ## Plan i stan
 
-Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap, system, folder, status, dane i dostęp).
+Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
 Stan na 2026-11-18: etapy 1 (`nbp/`) i 2 (`weather/`) działają, etapy 3–7 są planowane, ich foldery jeszcze nie istnieją.
 Następny krok: etap 3 (`ga4/`, GA4 Data API dla pmdata.pl; na start: dostęp ADC albo konta usługi do usługi GA4
 i property ID od Piotra). Przy nim wydzielić wspólny `load_to_bigquery` (dziś skopiowany w nbp/ i weather/). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
