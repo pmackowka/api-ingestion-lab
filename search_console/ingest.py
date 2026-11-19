@@ -1,9 +1,4 @@
-"""Wyniki wyszukiwania Google z Search Console API -> BigQuery.
-
-Uruchomienie:
-    uv run python -m search_console.ingest --project <projekt-gcp> --site sc-domain:pmdata.pl --start 2025-01-01   # backfill
-    uv run python -m search_console.ingest --project <projekt-gcp> --site sc-domain:pmdata.pl --lookback-days 7    # harmonogram
-"""
+"""Wyniki wyszukiwania Google z Search Console API -> BigQuery."""
 
 import argparse
 import urllib.parse
@@ -18,14 +13,8 @@ from common.http import authorized_session
 API_URL = "https://www.googleapis.com/webmasters/v3/sites/{site}/searchAnalytics/query"
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 
-# Maksimum API na jedno zapytanie; większy raport stronicujemy przez startRow.
 PAGE_SIZE = 25_000
 
-# Dwie tabele, bo Search Console liczy inaczej zależnie od wymiarów (sprawdzone na żywo, 2025-01..2026-11):
-# - bez `page`: sumy dla całej usługi (byProperty), zgodne z panelem;
-# - z `page`: każda podstrona widoczna w wyniku dostaje swoje wyświetlenie (byPage) — suma wyraźnie większa.
-# Dokumentacja: dla dokładnych sum usługi pomiń page i query. Sumy z tabeli stron nie są więc sumą usługi.
-# Wymiaru `query` nie ładujemy: Google anonimizuje rzadkie zapytania — widać tylko ułamek wyświetleń.
 REPORTS = {
     "search_daily": ["date", "country", "device"],
     "search_pages_daily": ["date", "page"],
@@ -44,9 +33,6 @@ def _schema(dimensions: list[str]) -> list[bigquery.SchemaField]:
         *fields,
         bigquery.SchemaField("clicks", "INT64", mode="REQUIRED"),
         bigquery.SchemaField("impressions", "INT64", mode="REQUIRED"),
-        # Średnia pozycja w wierszu. Przy agregacji licz średnią ważoną wyświetleniami,
-        # nie zwykłą średnią: SUM(position * impressions) / SUM(impressions).
-        # CTR nie zapisujemy — to clicks / impressions, policzysz w SQL.
         bigquery.SchemaField("position", "FLOAT64", mode="REQUIRED"),
         bigquery.SchemaField("site", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
@@ -54,12 +40,7 @@ def _schema(dimensions: list[str]) -> list[bigquery.SchemaField]:
 
 
 def fetch_report(session, site: str, start: date, end: date, dimensions: list[str], page_size: int = PAGE_SIZE) -> list[dict]:
-    """Krok 1: pobiera raport strona po stronie (paginacja startRow).
-
-    Inaczej niż w GA4: odpowiedź nie podaje liczby wszystkich wierszy (rowCount), więc koniec
-    poznajemy po stronie krótszej niż limit. Ten sam cel, inny sygnał końca — typowe między API.
-    """
-    # siteUrl idzie w ścieżce URL: "sc-domain:pmdata.pl" -> "sc-domain%3Apmdata.pl" (safe="" koduje też ":" i "/").
+    """Pobiera raport strona po stronie (paginacja startRow)."""
     url = API_URL.format(site=urllib.parse.quote(site, safe=""))
     rows, start_row = [], 0
     while True:
@@ -69,12 +50,9 @@ def fetch_report(session, site: str, start: date, end: date, dimensions: list[st
             "dimensions": dimensions,
             "rowLimit": page_size,
             "startRow": start_row,
-            # "all" = także świeże, wstępne dane z ostatnich dni ("final" kończy się ok. 2 dni wcześniej).
-            # Wstępne wartości poprawi lookback przy kolejnych uruchomieniach — jak w pogodzie.
             "dataState": "all",
         }
         response = session.post(url, json=body, timeout=60)
-        # 403 = konto usługi bez dostępu w Search Console albo brak zakresu webmasters.readonly w ADC.
         response.raise_for_status()
         page = response.json().get("rows", [])
         rows.extend(page)
@@ -84,10 +62,7 @@ def fetch_report(session, site: str, start: date, end: date, dimensions: list[st
 
 
 def to_rows(report: list[dict], dimensions: list[str], site: str, loaded_at: datetime) -> list[dict]:
-    """Krok 2: `keys` (wartości wymiarów w kolejności z zapytania) -> kolumny.
-
-    clicks i impressions przychodzą jako liczby zmiennoprzecinkowe (1.0) — to liczniki, więc int.
-    """
+    """`keys` (wartości wymiarów w kolejności z zapytania) -> kolumny."""
     rows = []
     for item in report:
         row = {_DIMENSION_COLUMNS[d]: value for d, value in zip(dimensions, item["keys"], strict=True)}
@@ -105,7 +80,6 @@ def to_rows(report: list[dict], dimensions: list[str], site: str, loaded_at: dat
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Wspólny interfejs CLI (common/cli.py) + --site, którego inne źródła nie mają."""
     parser = cli.make_parser("Search Console API -> BigQuery", default_dataset="raw_search_console")
-    # Usługa domenowa: sc-domain:example.com; usługa z prefiksem URL: https://example.com/
     parser.add_argument("--site", required=True, help="usługa Search Console, np. sc-domain:pmdata.pl")
     return cli.parse(parser, argv)
 

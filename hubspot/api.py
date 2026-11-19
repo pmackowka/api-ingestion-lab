@@ -1,7 +1,4 @@
-"""Wspólna sesja HTTP dla HubSpot CRM API — używają jej generator (zapis) i ingest (odczyt).
-
-Osobny moduł, bo oba skrypty potrzebują tego samego: tokenu z .env, adresu API i ponowień przy 429.
-"""
+"""Wspólna sesja HTTP dla HubSpot CRM API — używają jej generator (zapis) i ingest (odczyt)."""
 
 import os
 
@@ -10,41 +7,26 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 API = "https://api.hubapi.com"
-# Wersja API w ścieżce (np. /crm/objects/2026-09/contacts). HubSpot wersjonuje API datą;
-# ta sama wersja co platformVersion aplikacji w hubspot/app/hsproject.json.
 API_VERSION = "2026-09"
 
-# Właściwości kontaktu dodawane przez generator. Wbudowane źródło HubSpota (hs_analytics_source)
-# jest tylko do odczytu — liczy je skrypt śledzący HubSpota na stronie, którego pmdata.pl nie ma.
 CONTACT_PROPERTIES = [
     {"name": "lead_source", "label": "Lead source (GA4 source / medium)", "type": "string", "fieldType": "text"},
     {"name": "lead_event", "label": "Lead event (GA4 contact click)", "type": "string", "fieldType": "text"},
-    # type=date: wartość "YYYY-MM-DD", bez godziny — lead przypisany do doby GA4 (Europe/Warsaw).
     {"name": "lead_date", "label": "Lead date (GA4 day)", "type": "date", "fieldType": "date"},
 ]
 
-# Klucz upsertu deali. Kontakt ma wbudowany unikalny `email`, deal nie ma żadnego naturalnego klucza —
-# bez niego drugie uruchomienie generatora tworzyłoby duplikaty. hasUniqueValue: HubSpot odrzuca drugi deal
-# z tą samą wartością, a batch/upsert może go użyć jako idProperty. Ustawienia nie da się zmienić po utworzeniu.
 DEAL_PROPERTIES = [
     {"name": "deal_key", "label": "Deal key (generator)", "type": "string", "fieldType": "text", "hasUniqueValue": True},
 ]
 
 
 def make_session() -> requests.Session:
-    """Sesja z tokenem aplikacji i ponowieniami 429/5xx.
-
-    Token czytamy ze zmiennej środowiskowej, nie z pliku w kodzie: lokalnie podaje go
-    `uv run --env-file .env`, w GitHub Actions — sekret repo. Kod ten sam, zmienia się źródło.
-    """
+    """Sesja z tokenem aplikacji i ponowieniami 429/5xx."""
     token = os.environ.get("HUBSPOT_ACCESS_TOKEN")
     if not token:
         raise SystemExit("Brak HUBSPOT_ACCESS_TOKEN — uruchom przez: uv run --env-file .env python -m hubspot.<moduł>")
     session = requests.Session()
     session.headers["Authorization"] = f"Bearer {token}"
-    # 429 = limit zapytań (darmowy plan: 100 na 10 s na aplikację; search: 5 na s). urllib3 czeka tyle,
-    # ile każe nagłówek Retry-After, a gdy go nie ma — wykładniczo (2 s, 4 s, 8 s).
-    # POST też ponawiamy: batch/upsert jest idempotentny (klucz = e-mail), a search tylko czyta.
     retry = Retry(
         total=4,
         backoff_factor=2,

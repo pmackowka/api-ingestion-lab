@@ -38,7 +38,6 @@ def test_fetch_report_pages_until_short_page_and_encodes_site():
 
     rows = fetch_report(session, "sc-domain:pmdata.pl", date(2026, 11, 1), date(2026, 11, 2), ["date"], page_size=2)
 
-    # 5 wierszy po 2: strony 2, 2, 1 — trzecia krótsza niż limit kończy pętlę
     assert len(rows) == 5
     assert session.start_rows == [0, 2, 4]
     assert "sc-domain%3Apmdata.pl" in session.urls[0]
@@ -49,7 +48,6 @@ def test_fetch_report_full_last_page_needs_one_empty_request():
 
     rows = fetch_report(session, "s", date(2026, 11, 1), date(2026, 11, 2), ["date"], page_size=2)
 
-    # 4 wiersze po 2: ostatnia strona pełna, więc koniec poznajemy dopiero po pustej (startRow 4)
     assert len(rows) == 4
     assert session.start_rows == [0, 2, 4]
 

@@ -45,7 +45,6 @@ def test_fetch_report_pages_by_offset_until_row_count():
 
     result = fetch_report(session, "123", {}, page_size=2)
 
-    # 5 wierszy po 2 na stronę -> offsety 0, 2, 4
     assert result == rows
     assert session.offsets == [0, 2, 4]
 
