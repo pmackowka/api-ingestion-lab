@@ -64,7 +64,6 @@ def test_payment_date_is_stable_and_waits_for_today():
     early = {k: payment_date(k, issued, today=date(2026, 1, 2)) for k in keys}
 
     paid = {k: d for k, d in late.items() if d}
-    # Część faktur nigdy nie zapłacona, część zapłacona w oknie 3–45 dni; przed zapłatą — None.
     assert 0 < len(paid) < len(keys)
     assert all(date(2026, 1, 4) <= d <= date(2026, 2, 15) for d in paid.values())
     assert all(d is None for d in early.values())

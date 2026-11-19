@@ -1,14 +1,4 @@
-"""Generator faktur: wygrane deale z HubSpota (BigQuery) -> zaksięgowane faktury sprzedaży w Odoo.
-
-Uruchomienie (klucz z .env, Odoo z odoo/docker-compose.yml):
-    uv run --env-file .env python -m odoo.generate --project <projekt-gcp> --start 2025-01-01   # cała historia
-    uv run --env-file .env python -m odoo.generate --project <projekt-gcp> --lookback-days 7    # przyrost
-
-Zasada: każdy deal `closedwon` dostaje jedną fakturę na kwotę deala netto + 23% VAT (usługi), z datą
-wystawienia = data zamknięcia deala. Faktura nosi `deal_key` w polu `ref` — to klucz złączenia
-HubSpot ↔ Odoo w BigQuery i jednocześnie klucz idempotencji: deal z fakturą jest pomijany.
-Potem płatności: część faktur klient płaci po kilku–kilkudziesięciu dniach, reszta zostaje niezapłacona.
-"""
+"""Generator faktur: wygrane deale z HubSpota (BigQuery) -> zaksięgowane faktury sprzedaży w Odoo."""
 
 import argparse
 import random
@@ -20,22 +10,14 @@ from common import cli
 from common.bigquery import LOCATION
 from odoo.api import make_client
 
-# Podatek z polskiego planu kont (l10n_pl): 23% dla usług. Szukany po nazwie, bo plan ma dwa
-# podatki 23% sprzedaży: „23% G” (towary) i „23% S” (usługi) — sprawdzone w bazie lab.
 SERVICE_TAX_NAME = "23% S"
-# Stały seed jak w generatorze HubSpota: ta sama faktura zawsze dostaje tę samą decyzję o płatności.
 SEED = 20261119
-# Założony odsetek faktur, które klient w ogóle płaci, i czas od wystawienia do zapłaty (dni).
 PAY_RATE = 0.8
 DAYS_TO_PAY = (3, 45)
 
 
 def fetch_won_deals(client: bigquery.Client, project: str, dataset: str, start: date, end: date) -> list[dict]:
-    """Wygrane deale z kontaktem, zamknięte w [start, end], od najstarszego.
-
-    ORDER BY: Odoo numeruje faktury (FV/2026/00001…) w kolejności księgowania, więc starszy deal
-    księgujemy wcześniej — numeracja rośnie razem z datą wystawienia.
-    """
+    """Wygrane deale z kontaktem, zamknięte w [start, end], od najstarszego."""
     sql = f"""
         SELECT d.deal_key, d.amount, DATE(d.closedate) AS close_date, c.email, c.firstname, c.lastname
         FROM `{project}.{dataset}.deals` AS d
@@ -54,12 +36,7 @@ def fetch_won_deals(client: bigquery.Client, project: str, dataset: str, start: 
 
 
 def build_invoice(deal: dict, partner_id: int, tax_id: int) -> dict:
-    """Deal -> wartości faktury Odoo (account.move). Czysta funkcja: bez sieci, łatwa do testu.
-
-    invoice_line_ids: [0, 0, {...}] to komenda Odoo „utwórz powiązany rekord” (Command.create).
-    price_unit jako float: JSON nie ma typu dziesiętnego, a Odoo i tak trzyma kwoty jako float
-    zaokrąglany do precyzji waluty. Kwoty deali są pełnymi setkami, więc konwersja jest dokładna.
-    """
+    """Deal -> wartości faktury Odoo (account.move)."""
     return {
         "move_type": "out_invoice",
         "partner_id": partner_id,
@@ -70,19 +47,14 @@ def build_invoice(deal: dict, partner_id: int, tax_id: int) -> dict:
                 "name": f"Usługi analityczne ({deal['deal_key']})",
                 "quantity": 1,
                 "price_unit": float(deal["amount"]),
-                "tax_ids": [[6, 0, [tax_id]]],  # [6, 0, ids] = Command.set: dokładnie ten podatek
+                "tax_ids": [[6, 0, [tax_id]]],
             }]
         ],
     }
 
 
 def payment_date(deal_key: str, invoice_date: date, today: date, seed: int = SEED) -> date | None:
-    """Data zapłaty faktury albo None (jeszcze nie zapłacona / nigdy). Czysta funkcja.
-
-    Generator losowy na deal_key: wynik nie zależy od innych faktur ani od dnia uruchomienia —
-    od `today` zależy tylko, czy zapłata „już nastąpiła”. Faktura zapłacona po 30 dniach
-    zostaje więc not_paid przez pierwsze 29 dni, a potem dostaje płatność z właściwą datą.
-    """
+    """Data zapłaty faktury albo None (jeszcze nie zapłacona / nigdy)."""
     rng = random.Random(f"{seed}:pay:{deal_key}")
     pays = rng.random() < PAY_RATE
     paid_on = invoice_date + timedelta(days=rng.randint(*DAYS_TO_PAY))
@@ -90,15 +62,7 @@ def payment_date(deal_key: str, invoice_date: date, today: date, seed: int = SEE
 
 
 def register_payments(odoo, today: date) -> int:
-    """Płatności do niezapłaconych faktur, których data zapłaty już minęła. Zwraca liczbę płatności.
-
-    Kandydaci to wszystkie faktury not_paid w Odoo, nie tylko z okna --start/--end: zapłata
-    przychodzi do 45 dni po wystawieniu, więc faktura sprzed okna też może dziś zostać opłacona.
-    Idempotencja: zapłacona faktura ma inny payment_state i nie wraca na listę.
-
-    Kreator account.payment.register to ten sam mechanizm co przycisk „Zapłać”: faktury wskazuje
-    kontekst (active_model, active_ids), a dziennik banku i kwotę do zapłaty kreator dobiera sam.
-    """
+    """Płatności do niezapłaconych faktur, których data zapłaty już minęła."""
     unpaid = odoo.call(
         "account.move", "search_read",
         domain=[["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["payment_state", "=", "not_paid"]],
@@ -117,7 +81,7 @@ def register_payments(odoo, today: date) -> int:
 
 
 def ensure_partners(odoo, deals: list[dict]) -> dict[str, int]:
-    """Klienci po e-mailu: istniejący z Odoo, brakujący tworzeni jedną paczką. Zwraca {email: id}."""
+    """Klienci po e-mailu: istniejący z Odoo, brakujący tworzeni jedną paczką."""
     emails = sorted({d["email"] for d in deals})
     found = odoo.call("res.partner", "search_read", domain=[["email", "in", emails]], fields=["email"])
     ids = {p["email"]: p["id"] for p in found}
@@ -157,7 +121,6 @@ def create_invoices(odoo, new: list[dict]) -> None:
     [tax] = odoo.call("account.tax", "search_read", domain=[["type_tax_use", "=", "sale"], ["name", "=", SERVICE_TAX_NAME]], fields=["id"])
     partners = ensure_partners(odoo, new)
     move_ids = odoo.call("account.move", "create", vals_list=[build_invoice(d, partners[d["email"]], tax["id"]) for d in new])
-    # Zaksięgowanie (szkic -> posted): dopiero wtedy faktura dostaje numer i trafia do księgi.
     odoo.call("account.move", "action_post", ids=move_ids)
 
 

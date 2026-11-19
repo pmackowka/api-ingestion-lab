@@ -1,12 +1,4 @@
-"""Faktury sprzedaży i płatności z Odoo JSON-2 API -> BigQuery (pełna migawka obu tabel).
-
-Uruchomienie (klucz z .env, Odoo z odoo/docker-compose.yml):
-    uv run --env-file .env python -m odoo.ingest --project <projekt-gcp> --lookback-days 7
-
-Strategia jak w HubSpocie: pełne przeładowanie. Faktura jest rekordem zmienialnym — status płatności
-(`payment_state`) zmienia się tygodnie po wystawieniu, więc data wystawienia nie wyznacza zakresu do podmiany.
-Odoo działa lokalnie, więc ingest nie wchodzi do pipeline.yml — runner GitHuba go nie widzi.
-"""
+"""Faktury sprzedaży i płatności z Odoo JSON-2 API -> BigQuery (pełna migawka obu tabel)."""
 
 import argparse
 from datetime import datetime, timezone
@@ -29,9 +21,7 @@ PAYMENT_FIELDS = ["name", "date", "amount", "currency_id", "state", "payment_typ
 
 INVOICES_SCHEMA = [
     bigquery.SchemaField("invoice_id", "STRING", mode="REQUIRED"),
-    # Numer nadawany przy księgowaniu (FV/2026/00001); szkic go nie ma.
     bigquery.SchemaField("invoice_number", "STRING", mode="NULLABLE"),
-    # Pole `ref` faktury = deal_key z HubSpota — klucz złączenia HubSpot ↔ Odoo.
     bigquery.SchemaField("deal_key", "STRING", mode="NULLABLE"),
     bigquery.SchemaField("partner_id", "STRING", mode="NULLABLE"),
     bigquery.SchemaField("partner_name", "STRING", mode="NULLABLE"),
@@ -51,7 +41,6 @@ INVOICES_SCHEMA = [
 PAYMENTS_SCHEMA = [
     bigquery.SchemaField("payment_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("payment_number", "STRING", mode="NULLABLE"),
-    # Faktura, którą płatność rozliczyła (najmniejsze ID, gdy kilka) — złączenie z invoices.
     bigquery.SchemaField("invoice_id", "STRING", mode="NULLABLE"),
     bigquery.SchemaField("payment_date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("amount", "NUMERIC", mode="REQUIRED"),
@@ -64,12 +53,7 @@ PAYMENTS_SCHEMA = [
 
 
 def fetch_records(odoo, model: str, domain: list, fields: list[str], page_size: int = PAGE_SIZE) -> list[dict]:
-    """Krok 1: wszystkie rekordy modelu, strona po stronie (search_read z limit/offset).
-
-    Czwarty wzorzec końca paginacji w repo: Odoo nie podaje liczby rekordów ani kursora,
-    więc koniec poznajemy po stronie krótszej niż limit (jak Search Console).
-    order="id": stała kolejność, inaczej strony mogłyby się nakładać.
-    """
+    """Wszystkie rekordy modelu, strona po stronie (search_read z limit/offset)."""
     records, offset = [], 0
     while True:
         page = odoo.call(model, "search_read", domain=domain, fields=fields, limit=page_size, offset=offset, order="id")
@@ -90,7 +74,7 @@ def _amount(value: float) -> str:
 
 
 def to_rows(invoices: list[dict], loaded_at: datetime) -> list[dict]:
-    """Krok 2: faktura Odoo -> wiersz. False (pusta wartość w Odoo) -> None (NULL w BigQuery)."""
+    """Faktura Odoo -> wiersz."""
     rows = []
     for inv in invoices:
         partner_id, partner_name = _many2one(inv["partner_id"])
@@ -109,7 +93,6 @@ def to_rows(invoices: list[dict], loaded_at: datetime) -> list[dict]:
                 "amount_total": _amount(inv["amount_total"]),
                 "state": inv["state"],
                 "payment_state": inv["payment_state"] or None,
-                # Odoo zwraca czas UTC bez strefy ("2026-11-19 13:40:00") — BigQuery czyta go jako UTC.
                 "created_at": inv["create_date"],
                 "updated_at": inv["write_date"],
                 "loaded_at": loaded_at.isoformat(),
@@ -119,7 +102,7 @@ def to_rows(invoices: list[dict], loaded_at: datetime) -> list[dict]:
 
 
 def payments_to_rows(payments: list[dict], loaded_at: datetime) -> list[dict]:
-    """Krok 2: płatność Odoo -> wiersz. reconciled_invoice_ids to lista ID (many2many), może być pusta."""
+    """Płatność Odoo -> wiersz."""
     return [
         {
             "payment_id": str(p["id"]),
@@ -147,7 +130,6 @@ def main() -> None:
     odoo = make_client()
     loaded_at = datetime.now(timezone.utc)
     invoices = to_rows(fetch_records(odoo, "account.move", [["move_type", "=", "out_invoice"]], INVOICE_FIELDS), loaded_at)
-    # Tylko wpłaty od klientów; zwroty i płatności dostawcom to payment_type outbound.
     payments = payments_to_rows(
         fetch_records(odoo, "account.payment", [["payment_type", "=", "inbound"]], PAYMENT_FIELDS), loaded_at
     )

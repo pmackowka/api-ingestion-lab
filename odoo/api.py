@@ -1,14 +1,9 @@
-"""Wspólna sesja HTTP dla Odoo JSON-2 API — używają jej generator faktur (zapis) i ingest (odczyt).
-
-JSON-2 (Odoo 19+) zastępuje XML-RPC i JSON-RPC, które Odoo usunie w wersji 22: model i metoda w URL-u,
-argumenty jako nazwane pola JSON, klucz API w nagłówku Authorization.
-"""
+"""Wspólna sesja HTTP dla Odoo JSON-2 API — używają jej generator faktur (zapis) i ingest (odczyt)."""
 
 import os
 
 import requests
 
-# Odoo z odoo/docker-compose.yml słucha tylko lokalnie; baza utworzona przez `odoo db init lab`.
 ODOO_URL = os.environ.get("ODOO_URL", "http://127.0.0.1:8069")
 ODOO_DB = os.environ.get("ODOO_DB", "lab")
 
@@ -22,7 +17,6 @@ class OdooClient:
     def call(self, model: str, method: str, **params):
         response = self.session.post(f"{self.url}/json/2/{model}/{method}", json=params, timeout=60)
         if response.status_code >= 400:
-            # Odoo opisuje błąd w treści (name, message) — sam kod 422 nic nie mówi.
             body = response.json() if response.headers.get("Content-Type", "").startswith("application/json") else {}
             raise RuntimeError(f"Odoo {model}.{method} {response.status_code}: {body.get('message', response.text[:300])}")
         return response.json()

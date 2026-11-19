@@ -9,8 +9,8 @@ Laboratorium inżynierii danych: pobieranie danych z API (głównie REST) w Pyth
 do BigQuery. Każde źródło to osobny, niezależny pipeline we własnym folderze.
 
 Cel: nauka mechanizmów ingestu na realnych i realistycznych źródłach — limity API, paginacja,
-uwierzytelnianie, ponowienia, idempotentny zapis. Kod ma działać, a komentarze po polsku mają
-tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
+uwierzytelnianie, ponowienia, idempotentny zapis. Kod bez komentarzy, docstring jednozdaniowy;
+mechanizm i powody decyzji opisują README folderów i `docs/`.
 
 Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): pogoda z Open-Meteo,
 GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
@@ -85,7 +85,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 ## Konwencje
 
-- Kod i nazwy po angielsku, komentarze, docstringi i README po polsku.
+- Kod i nazwy po angielsku, docstringi (jedno zdanie) i README po polsku. Bez komentarzy w kodzie i YAML.
 - Fakty o API (limity, kody błędów, format odpowiedzi) sprawdzaj na żywo albo w dokumentacji
   i zapisuj w README folderu z datą sprawdzenia — nie z pamięci.
 - Wzorzec ingestu (z `nbp/`): okna/paginacja → pobranie → spłaszczenie do wierszy → load do

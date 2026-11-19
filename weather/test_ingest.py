@@ -32,7 +32,6 @@ def test_to_rows_one_row_per_location_and_day_in_request_order():
 
     rows = to_rows(response, LOADED_AT)
 
-    # 5 lokalizacji x 2 dni; null z API zostaje None (kolumna NULLABLE)
     assert len(rows) == len(LOCATIONS) * 2
     assert rows[0]["location_id"] == "warszawa" and rows[0]["weather_date"] == "2026-11-16"
     assert rows[1]["temperature_2m_mean"] is None

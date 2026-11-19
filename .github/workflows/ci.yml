@@ -1,10 +1,3 @@
-# ============================================================================
-# CI: testy przy każdym pushu na main i przy każdym PR.
-#
-# Bez połączenia z BigQuery: testy sprawdzają logikę (dzielenie zakresu dat
-# na okna), a nie chmurę. Dzięki temu repo nie potrzebuje poświadczeń GCP
-# w sekretach.
-# ============================================================================
 name: CI
 
 on:
@@ -12,11 +5,9 @@ on:
   push:
     branches: [main]
 
-# Zasada najmniejszych uprawnień: workflow tylko czyta kod.
 permissions:
   contents: read
 
-# Po kilku pushach pod rząd liczy się wynik ostatniego - starsze przebiegi anulujemy.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -27,13 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Cache trzyma pobrane zależności między przebiegami.
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
-      # --frozen: CI testuje dokładnie wersje z uv.lock, a nie najnowsze z PyPI.
       - name: Sync
         run: uv sync --frozen
 

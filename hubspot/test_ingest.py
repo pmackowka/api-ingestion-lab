@@ -34,7 +34,6 @@ class _FakeSession:
         return _Response(body)
 
     def post(self, url, json, timeout):
-        # Jak HubSpot: odpowiedź upsertu zawiera ID i wysłane właściwości (w tym klucz).
         self.batches.append(json["inputs"])
         results = [{"id": f"id-{item['id']}", "properties": item["properties"]} for item in json["inputs"]]
         return _Response({"results": results})
@@ -51,7 +50,6 @@ def test_build_leads_is_deterministic_and_per_day():
     full = build_leads(clicks)
     only_second_day = build_leads(clicks[1:])
 
-    # Ten sam seed -> te same leady; dzień 2 nie zależy od tego, czy liczono też dzień 1.
     assert build_leads(clicks) == full
     assert [lead for lead in full if lead["lead_date"] == "2026-11-02"] == only_second_day
 
@@ -82,7 +80,6 @@ def test_build_deals_stage_depends_only_on_date():
     early = build_deals(leads, today=date(2026, 1, 2))
     late = build_deals(leads, today=date(2026, 12, 31))
 
-    # Te same deale i kwoty niezależnie od dnia uruchomienia; zmienia się tylko etap.
     assert [d["properties"]["deal_key"] for d in early] == [d["properties"]["deal_key"] for d in late]
     assert [d["properties"]["amount"] for d in early] == [d["properties"]["amount"] for d in late]
     assert all(d["properties"]["dealstage"] not in ("closedwon", "closedlost") for d in early)
@@ -115,6 +112,5 @@ def test_deals_to_rows_takes_lowest_contact_id_or_null():
 
     rows = deals_to_rows([with_contacts, without], LOADED_AT)
 
-    # min po int, nie po tekście: "100" < "90" jako napis.
     assert rows[0]["contact_id"] == "90" and rows[0]["amount"] == "1200"
     assert rows[1]["contact_id"] is None

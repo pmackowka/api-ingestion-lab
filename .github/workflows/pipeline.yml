@@ -1,55 +1,29 @@
-# ============================================================================
-# Pipeline: codzienny ingest wszystkich źródeł do BigQuery.
-#
-# Osobno od ci.yml: CI sprawdza kod przy pushu, ten workflow ładuje dane
-# według harmonogramu. Porównanie wariantów orkiestracji i powód wyboru
-# matrix: docs/orkiestracja.md.
-#
-# Poświadczenia bez klucza JSON w sekretach: Workload Identity Federation.
-# GitHub wystawia krótkotrwały token OIDC, GCP wymienia go na token konta
-# ingest-runner (konfiguracja: docs/konfiguracja.md).
-# ============================================================================
 name: Pipeline
 
 on:
   schedule:
-    # Codziennie 1:41 czasu polskiego. Noc, bo w dzień runnery GitHuba są obciążone
-    # i przebiegi z harmonogramu bywają opóźnione albo pomijane; minuta nie jest pełna,
-    # bo szczyt przypada na początek każdej godziny.
-    # Nie 2:xx: przy zmianie czasu ta godzina raz w roku nie istnieje (marzec), a raz
-    # występuje dwa razy (październik). 1:xx występuje zawsze dokładnie raz.
-    # Kurs NBP z danego dnia (publikacja 11:45–12:15) wpada w nocy następnego dnia.
     - cron: '41 1 * * *'
       timezone: 'Europe/Warsaw'
-  # Ręczne uruchomienie z zakładki Actions (test, nadrobienie dnia).
   workflow_dispatch:
 
 permissions:
   contents: read
-  # id-token: write pozwala jobowi poprosić GitHuba o token OIDC dla WIF.
   id-token: write
 
-# Dwa przebiegi naraz pisałyby do tych samych tabel. Drugi czeka; nie anulujemy
-# trwającego, bo przerwany load zostawia tylko staging, a nie pół tabeli.
 concurrency:
   group: pipeline
   cancel-in-progress: false
 
 env:
   PROJECT: api-ingestion-lab-bq
-  # 7 dni wstecz: ostatnie dni pogody, GA4 i Search Console są wstępne i się zmieniają,
-  # a tydzień przerwy w harmonogramie nie zostawia luki.
   LOOKBACK_DAYS: 7
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
     strategy:
-      # Domyślnie true: błąd jednego źródła anulowałby pozostałe.
-      # Źródła są niezależne, więc awaria API NBP nie powinna zatrzymać GA4.
       fail-fast: false
       matrix:
-        # include: każde źródło z własnymi argumentami (tylko GA4 i Search Console je mają).
         include:
           - source: nbp
             args: ''
@@ -59,17 +33,12 @@ jobs:
             args: '--property 539646739'
           - source: search_console
             args: '--site sc-domain:pmdata.pl'
-          # Pełna migawka kontaktów; --lookback-days przyjmuje, ale go nie używa (hubspot/README.md).
           - source: hubspot
             args: ''
     name: ingest (${{ matrix.source }})
     steps:
-      # Checkout przed auth: akcja auth zapisuje plik poświadczeń w katalogu roboczym.
       - uses: actions/checkout@v7
 
-      # Plik poświadczeń + GOOGLE_APPLICATION_CREDENTIALS. Kod czyta je przez
-      # google.auth.default(), tak samo jak lokalne ADC — bez zmian w Pythonie.
-      # Zakresy (analytics.readonly, webmasters.readonly) nadaje sam kod przy tworzeniu sesji.
       - uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.PROJECT }}
@@ -83,15 +52,10 @@ jobs:
       - run: uv sync --frozen
 
       - name: Ingest ${{ matrix.source }}
-        # Token HubSpota z sekretu repo; pozostałe źródła go nie czytają (Google: WIF, NBP i pogoda: bez klucza).
         env:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
         run: uv run python -m ${{ matrix.source }}.ingest --project $PROJECT --lookback-days $LOOKBACK_DAYS ${{ matrix.args }}
 
-  # Syntetyczne leady i deale z kliknięć GA4 do HubSpota. Po ingeście, bo czyta świeże raw_ga4.contact_events_daily.
-  # Nowe leady i zmiany etapów deali trafią do BigQuery przy następnym przebiegu (ingest hubspot leci równolegle z GA4) —
-  # dzień opóźnienia w danych syntetycznych za cenę prostego grafu zależności.
-  # if: !cancelled() zamiast domyślnego success(): awaria np. NBP nie powinna blokować leadów z GA4.
   generate-leads:
     needs: ingest
     if: ${{ !cancelled() }}

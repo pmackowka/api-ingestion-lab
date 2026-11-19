@@ -1,15 +1,4 @@
-"""Generator syntetycznych leadów i deali: kliknięcia w kontakt z GA4 (BigQuery) -> kontakty i deale w HubSpot.
-
-Uruchomienie (token z .env):
-    uv run --env-file .env python -m hubspot.generate --project <projekt-gcp> --start 2025-01-01   # cała historia
-    uv run --env-file .env python -m hubspot.generate --project <projekt-gcp> --lookback-days 7    # przyrost
-
-Zasada: każde kliknięcie w kontakt (phone_reveal, email_click…) zamienia się w lead z prawdopodobieństwem
-LEAD_RATE, a lead dziedziczy źródło i medium sesji tego kliknięcia. Dzięki temu proporcje źródeł leadów
-odpowiadają proporcjom źródeł kliknięć w GA4, a wolumen — liczbie kliknięć. Część leadów dostaje deal
-(DEAL_RATE), który po cyklu sprzedaży kończy się wygraną albo przegraną. Dane trafiają do prawdziwego
-HubSpota (konto testowe), a ingest pobiera je z powrotem przez API — jak z każdego CRM.
-"""
+"""Generator syntetycznych leadów i deali: kliknięcia w kontakt z GA4 (BigQuery) -> kontakty i deale w HubSpot."""
 
 import argparse
 import random
@@ -21,21 +10,13 @@ from common import cli
 from common.bigquery import LOCATION
 from hubspot.api import API, API_VERSION, CONTACT_PROPERTIES, DEAL_PROPERTIES, make_session
 
-# Stały seed: ten sam dzień GA4 zawsze daje te same leady (imiona, decyzje lead/nie-lead) i te same deale.
 SEED = 20261118
-# Założony odsetek kliknięć w kontakt, które kończą się leadem w CRM (np. telefon odebrany, mail z zapytaniem).
 LEAD_RATE = 0.5
-# Założony odsetek leadów, z którymi handlowiec otwiera deal, i odsetek deali wygranych.
 DEAL_RATE = 0.4
 WIN_RATE = 0.35
-# Cykl sprzedaży: od leada do zamknięcia deala (dni). Górna granica wyznacza też, jak daleko wstecz
-# generator przelicza leady — deal sprzed 45 dni może dopiero dziś przejść z otwartego w zamknięty.
 SALES_CYCLE_DAYS = (7, 45)
-# Kwota deala w PLN (waluta konta testowego), wielokrotność 100.
 AMOUNT_RANGE = (20, 300)
-# Etapy otwarte domyślnego lejka; ID wewnętrzne sprawdzone przez GET /crm/pipelines/2026-09/deals.
 OPEN_STAGES = ["appointmentscheduled", "qualifiedtobuy", "presentationscheduled", "decisionmakerboughtin", "contractsent"]
-# Limit API: batch endpointy przyjmują maks. 100 rekordów na zapytanie.
 BATCH_SIZE = 100
 
 FIRST_NAMES = ["Anna", "Piotr", "Katarzyna", "Tomasz", "Magdalena", "Michał", "Agnieszka", "Paweł", "Joanna", "Marcin"]
@@ -43,11 +24,7 @@ LAST_NAMES = ["Nowak", "Kowalczyk", "Wiśniewska", "Wójcik", "Kamińska", "Lewa
 
 
 def fetch_contact_clicks(client: bigquery.Client, project: str, dataset: str, start: date, end: date) -> list[dict]:
-    """Kliknięcia w kontakt z tabeli GA4, zagregowane do dzień x źródło x medium x zdarzenie.
-
-    ORDER BY jest częścią kontraktu: build_leads przechodzi wiersze po kolei z jednym generatorem
-    losowym na dzień, więc inna kolejność dałaby inne leady przy tym samym seedzie.
-    """
+    """Kliknięcia w kontakt z tabeli GA4, zagregowane do dzień x źródło x medium x zdarzenie."""
     sql = f"""
         SELECT report_date, session_source, session_medium, event_name, SUM(event_count) AS clicks
         FROM `{project}.{dataset}.contact_events_daily`
@@ -65,13 +42,7 @@ def fetch_contact_clicks(client: bigquery.Client, project: str, dataset: str, st
 
 
 def build_leads(clicks: list[dict], seed: int = SEED, rate: float = LEAD_RATE) -> list[dict]:
-    """Kliknięcia -> leady (właściwości kontaktu HubSpot). Czysta funkcja: bez sieci, łatwa do testu.
-
-    Generator losowy osobno dla każdego dnia (seed + data): przeliczenie jednego tygodnia daje te same
-    leady co pełny backfill, bo wynik dnia nie zależy od tego, od którego dnia ruszył skrypt.
-    E-mail = klucz upsertu w HubSpot, więc musi być deterministyczny: lead-YYYYMMDD-NNN@example.com
-    (domena example.com jest zarezerwowana do przykładów — żaden mail nie trafi do prawdziwej osoby).
-    """
+    """Kliknięcia -> leady (właściwości kontaktu HubSpot)."""
     leads, rng, current_day, n = [], None, None, 0
     for row in clicks:
         day = row["report_date"]
@@ -95,15 +66,7 @@ def build_leads(clicks: list[dict], seed: int = SEED, rate: float = LEAD_RATE) -
 
 
 def build_deals(leads: list[dict], today: date, seed: int = SEED) -> list[dict]:
-    """Leady -> deale: {"email": kontakt do powiązania, "properties": właściwości deala}. Czysta funkcja.
-
-    Generator losowy osobno dla każdego leada (seed + e-mail), z tego samego powodu co dzień w build_leads:
-    wynik leada nie zależy od tego, które inne leady są w oknie. Wszystkie losowania odbywają się zawsze
-    i w tej samej kolejności — od `today` zależy tylko etap, nie wylosowane wartości.
-
-    Etap zależy od daty: przed closedate deal jest otwarty, po niej wygrany albo przegrany. Ten sam deal
-    zmienia więc etap między uruchomieniami — jak w prawdziwym CRM, i dlatego ingest robi pełną migawkę.
-    """
+    """Leady -> deale: {"email": kontakt do powiązania, "properties": właściwości deala}."""
     deals = []
     for lead in leads:
         rng = random.Random(f"{seed}:deal:{lead['email']}")
@@ -128,9 +91,7 @@ def build_deals(leads: list[dict], today: date, seed: int = SEED) -> list[dict]:
                     "dealname": f"{lead['firstname']} {lead['lastname']} ({key})",
                     "pipeline": "default",
                     "dealstage": stage,
-                    # Kwota jako tekst: HubSpot przyjmuje liczby w JSON jako string, bez przejścia przez float.
                     "amount": str(amount),
-                    # Planowana (otwarty) albo faktyczna (zamknięty) data zamknięcia; format jak lead_date.
                     "closedate": close_date.isoformat(),
                 },
             }
@@ -149,13 +110,7 @@ def ensure_properties(session, object_type: str, properties: list[dict], group: 
 
 
 def upsert(session, object_type: str, records: list[dict], id_property: str, batch_size: int = BATCH_SIZE) -> dict:
-    """Zapis paczkami po 100 przez batch/upsert; zwraca {wartość klucza: ID rekordu w HubSpot}.
-
-    Upsert zamiast create: drugie uruchomienie dla tych samych dni aktualizuje istniejące rekordy
-    zamiast tworzyć duplikaty — ta sama idempotencja, której pilnujemy po stronie BigQuery.
-    ID z odpowiedzi są potrzebne do powiązań deal -> kontakt. Odpowiedź zawiera tylko wysłane
-    właściwości (i systemowe), dlatego klucz musi być wśród `properties`, nie tylko w `id`.
-    """
+    """Zapis paczkami po 100 przez batch/upsert; zwraca {wartość klucza: ID rekordu w HubSpot}."""
     url = f"{API}/crm/objects/{API_VERSION}/{object_type}/batch/upsert"
     ids = {}
     for i in range(0, len(records), batch_size):
@@ -169,11 +124,7 @@ def upsert(session, object_type: str, records: list[dict], id_property: str, bat
 
 
 def associate_deals(session, pairs: list[tuple[str, str]], batch_size: int = BATCH_SIZE) -> None:
-    """Powiązania deal -> kontakt (domyślny typ, bez etykiety), paczkami.
-
-    Osobny endpoint, bo batch/upsert nie przyjmuje `associations` (przyjmuje je tylko create).
-    Ponowne powiązanie tej samej pary niczego nie dubluje — rekordy łączy co najwyżej jedno powiązanie danego typu.
-    """
+    """Powiązania deal -> kontakt (domyślny typ, bez etykiety), paczkami."""
     url = f"{API}/crm/associations/{API_VERSION}/deal/contact/batch/associate/default"
     for i in range(0, len(pairs), batch_size):
         inputs = [{"from": {"id": deal_id}, "to": {"id": contact_id}} for deal_id, contact_id in pairs[i : i + batch_size]]
@@ -188,7 +139,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    # Okno poszerzone o maksymalny cykl sprzedaży: deale leadów sprzed 45 dni mogą dziś zmienić etap.
     start = args.start - timedelta(days=SALES_CYCLE_DAYS[1])
     client = bigquery.Client(project=args.project, location=LOCATION)
     leads = build_leads(fetch_contact_clicks(client, args.project, args.dataset, start, args.end))
