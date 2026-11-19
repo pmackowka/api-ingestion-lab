@@ -1,6 +1,6 @@
-# Odoo ERP — faktury do wygranych deali → BigQuery
+# Odoo ERP — faktury i płatności do wygranych deali → BigQuery
 
-Dwa skrypty. `generate.py` wystawia w Odoo fakturę do każdego wygranego deala z HubSpota (`raw_hubspot.deals`): kwota deala netto + 23% VAT, data = zamknięcie deala, `deal_key` w polu `ref`. `ingest.py` pobiera faktury z powrotem przez JSON-2 API do BigQuery. W etapie 7 to „faktury” w łańcuchu sesje → kontakty → leady → deale → faktury.
+Dwa skrypty. `generate.py` wystawia w Odoo fakturę do każdego wygranego deala z HubSpota (`raw_hubspot.deals`): kwota deala netto + 23% VAT, data = zamknięcie deala, `deal_key` w polu `ref`, a potem rejestruje płatności części faktur. `ingest.py` pobiera faktury i płatności z powrotem przez JSON-2 API do BigQuery. W etapie 7 to „faktury” w łańcuchu sesje → kontakty → leady → deale → faktury → płatności.
 
 Diagram sekwencji UML jednego uruchomienia: [`uml-diagram.md`](uml-diagram.md).
 
@@ -22,7 +22,7 @@ docker compose -f odoo/docker-compose.yml exec web odoo --db_host db -r odoo -w 
 #    Kopiuj przyciskiem przy kluczu (nie przykład kodu obok), potem dopisz do .env — token HubSpota zostaje:
 printf 'ODOO_API_KEY=%s\n' "$(pbpaste)" >> .env
 
-# 4. Faktury za całą historię, potem migawka do BigQuery. Drugie uruchomienie generatora nie dubluje.
+# 4. Faktury i płatności za całą historię, potem migawka do BigQuery. Drugie uruchomienie generatora nie dubluje.
 uv run --env-file .env python -m odoo.generate --project $PROJECT --start 2025-01-01
 uv run --env-file .env python -m odoo.ingest --project $PROJECT --lookback-days 7
 
@@ -44,6 +44,7 @@ Odoo 20.0 Community (obraz `odoo:20.0-20261112`), [JSON-2 API](https://www.odoo.
 | relacja w odpowiedzi to `[id, nazwa]`, pusta wartość to `False` | `_many2one` → dwie kolumny albo NULL |
 | plan kont l10n_pl ma dwa podatki 23% sprzedaży: „23% G” i „23% S” | szukany po nazwie „23% S” (usługi) |
 | numer faktury (FV/2026/00001) nadawany przy księgowaniu, kolejno | deale księgowane od najstarszej daty |
+| płatność rejestruje kreator `account.payment.register` (jak przycisk „Zapłać”): faktury w kontekście `active_model` / `active_ids`, potem `action_create_payments` | jeden kreator na fakturę; dziennik banku i kwotę dobiera Odoo, faktura od razu `paid` |
 | `search_read` nie podaje liczby rekordów ani kursora | strona krótsza niż `limit` = koniec |
 | Odoo słucha tylko na 127.0.0.1 | ingest poza `pipeline.yml` — runner GitHuba go nie widzi; uruchamiany ręcznie |
 
@@ -51,7 +52,9 @@ Odoo 20.0 Community (obraz `odoo:20.0-20261112`), [JSON-2 API](https://www.odoo.
 
 `raw_odoo.invoices`, klucz `invoice_id`: `invoice_number`, `deal_key` (złączenie z `raw_hubspot.deals`), `partner_id`, `partner_name`, `invoice_date`, `due_date`, `currency`, `amount_untaxed`, `amount_tax`, `amount_total` (`NUMERIC`), `state`, `payment_state`, `created_at`, `updated_at`, `loaded_at`.
 
-**Pełne przeładowanie** (`replace_table`), jak w HubSpocie: faktura zmienia `payment_state` tygodnie po wystawieniu, więc data wystawienia nie wyznacza zakresu do podmiany.
+`raw_odoo.payments`, klucz `payment_id`: `payment_number`, `invoice_id` (rozliczona faktura → złączenie z `invoices`), `payment_date`, `amount`, `currency`, `state`, `created_at`, `updated_at`, `loaded_at`. Tylko wpłaty od klientów (`payment_type = inbound`).
+
+**Pełne przeładowanie** obu tabel (`replace_table`), jak w HubSpocie: faktura zmienia `payment_state` tygodnie po wystawieniu, więc data wystawienia nie wyznacza zakresu do podmiany.
 
 | Wariant | Kiedy | Dlaczego nie tutaj |
 |---|---|---|
@@ -59,4 +62,6 @@ Odoo 20.0 Community (obraz `odoo:20.0-20261112`), [JSON-2 API](https://www.odoo.
 | przyrost po `write_date` + `MERGE` po `invoice_id` | duży ERP, billing w BigQuery | sandbox nie ma `MERGE`; usunięcia trzeba łapać osobno |
 | CDC z PostgreSQL (Datastream, Debezium) | wiele tabel, opóźnienie minut | infrastruktura ponad potrzebę kilku faktur dziennie |
 
-Idempotencja generatora: faktura z `ref = deal_key` już istnieje → deal pominięty. Ograniczenie: płatności nie są jeszcze generowane, więc każda faktura ma `payment_state = not_paid`.
+Idempotencja generatora: faktura z `ref = deal_key` już istnieje → deal pominięty; płatność dostają tylko faktury `not_paid`.
+
+Płatności: klient płaci z prawdopodobieństwem `PAY_RATE` (0,8), po 3–45 dniach (`DAYS_TO_PAY`), generator losowy na `deal_key` (`SEED`). Płatność powstaje dopiero, gdy jej data minie — faktura płacona po 30 dniach przez pierwsze 29 dni zostaje `not_paid`, jak w prawdziwym rozrachunku. Kandydaci to wszystkie niezapłacone faktury w Odoo, nie tylko z okna `--start`/`--end`.
