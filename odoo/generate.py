@@ -1,0 +1,115 @@
+"""Generator faktur: wygrane deale z HubSpota (BigQuery) -> zaksięgowane faktury sprzedaży w Odoo.
+
+Uruchomienie (klucz z .env, Odoo z odoo/docker-compose.yml):
+    uv run --env-file .env python -m odoo.generate --project <projekt-gcp> --start 2025-01-01   # cała historia
+    uv run --env-file .env python -m odoo.generate --project <projekt-gcp> --lookback-days 7    # przyrost
+
+Zasada: każdy deal `closedwon` dostaje jedną fakturę na kwotę deala netto + 23% VAT (usługi), z datą
+wystawienia = data zamknięcia deala. Faktura nosi `deal_key` w polu `ref` — to klucz złączenia
+HubSpot ↔ Odoo w BigQuery i jednocześnie klucz idempotencji: deal z fakturą jest pomijany.
+"""
+
+import argparse
+from datetime import date
+
+from google.cloud import bigquery
+
+from common import cli
+from common.bigquery import LOCATION
+from odoo.api import make_client
+
+# Podatek z polskiego planu kont (l10n_pl): 23% dla usług. Szukany po nazwie, bo plan ma dwa
+# podatki 23% sprzedaży: „23% G” (towary) i „23% S” (usługi) — sprawdzone w bazie lab.
+SERVICE_TAX_NAME = "23% S"
+
+
+def fetch_won_deals(client: bigquery.Client, project: str, dataset: str, start: date, end: date) -> list[dict]:
+    """Wygrane deale z kontaktem, zamknięte w [start, end], od najstarszego.
+
+    ORDER BY: Odoo numeruje faktury (FV/2026/00001…) w kolejności księgowania, więc starszy deal
+    księgujemy wcześniej — numeracja rośnie razem z datą wystawienia.
+    """
+    sql = f"""
+        SELECT d.deal_key, d.amount, DATE(d.closedate) AS close_date, c.email, c.firstname, c.lastname
+        FROM `{project}.{dataset}.deals` AS d
+        JOIN `{project}.{dataset}.contacts` AS c USING (contact_id)
+        WHERE d.dealstage = 'closedwon' AND d.deal_key IS NOT NULL
+          AND DATE(d.closedate) BETWEEN @start AND @end
+        ORDER BY close_date, d.deal_key
+    """
+    config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("start", "DATE", start),
+            bigquery.ScalarQueryParameter("end", "DATE", end),
+        ]
+    )
+    return [dict(row) for row in client.query(sql, job_config=config).result()]
+
+
+def build_invoice(deal: dict, partner_id: int, tax_id: int) -> dict:
+    """Deal -> wartości faktury Odoo (account.move). Czysta funkcja: bez sieci, łatwa do testu.
+
+    invoice_line_ids: [0, 0, {...}] to komenda Odoo „utwórz powiązany rekord” (Command.create).
+    price_unit jako float: JSON nie ma typu dziesiętnego, a Odoo i tak trzyma kwoty jako float
+    zaokrąglany do precyzji waluty. Kwoty deali są pełnymi setkami, więc konwersja jest dokładna.
+    """
+    return {
+        "move_type": "out_invoice",
+        "partner_id": partner_id,
+        "invoice_date": deal["close_date"].isoformat(),
+        "ref": deal["deal_key"],
+        "invoice_line_ids": [
+            [0, 0, {
+                "name": f"Usługi analityczne ({deal['deal_key']})",
+                "quantity": 1,
+                "price_unit": float(deal["amount"]),
+                "tax_ids": [[6, 0, [tax_id]]],  # [6, 0, ids] = Command.set: dokładnie ten podatek
+            }]
+        ],
+    }
+
+
+def ensure_partners(odoo, deals: list[dict]) -> dict[str, int]:
+    """Klienci po e-mailu: istniejący z Odoo, brakujący tworzeni jedną paczką. Zwraca {email: id}."""
+    emails = sorted({d["email"] for d in deals})
+    found = odoo.call("res.partner", "search_read", domain=[["email", "in", emails]], fields=["email"])
+    ids = {p["email"]: p["id"] for p in found}
+    missing = [d for d in {d["email"]: d for d in deals}.values() if d["email"] not in ids]
+    if missing:
+        vals = [{"name": f"{d['firstname']} {d['lastname']}", "email": d["email"]} for d in missing]
+        created = odoo.call("res.partner", "create", vals_list=vals)
+        ids.update(zip([d["email"] for d in missing], created))
+    return ids
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Wspólny interfejs CLI; --dataset wskazuje tu źródło (dataset HubSpota), nie cel."""
+    return cli.parse(cli.make_parser("HubSpot (BigQuery) -> faktury w Odoo", default_dataset="raw_hubspot"), argv)
+
+
+def main() -> None:
+    args = parse_args()
+    client = bigquery.Client(project=args.project, location=LOCATION)
+    deals = fetch_won_deals(client, args.project, args.dataset, args.start, args.end)
+
+    odoo = make_client()
+    existing = odoo.call(
+        "account.move", "search_read",
+        domain=[["move_type", "=", "out_invoice"], ["ref", "in", [d["deal_key"] for d in deals]]], fields=["ref"],
+    )
+    done = {m["ref"] for m in existing}
+    new = [d for d in deals if d["deal_key"] not in done]
+    if not new:
+        print(f"Odoo: 0 nowych faktur ({len(deals)} wygranych deali w {args.start}..{args.end} ma już fakturę)")
+        return
+
+    [tax] = odoo.call("account.tax", "search_read", domain=[["type_tax_use", "=", "sale"], ["name", "=", SERVICE_TAX_NAME]], fields=["id"])
+    partners = ensure_partners(odoo, new)
+    move_ids = odoo.call("account.move", "create", vals_list=[build_invoice(d, partners[d["email"]], tax["id"]) for d in new])
+    # Zaksięgowanie (szkic -> posted): dopiero wtedy faktura dostaje numer i trafia do księgi.
+    odoo.call("account.move", "action_post", ids=move_ids)
+    print(f"Odoo: {len(move_ids)} nowych faktur, {len(done)} już było ({args.start}..{args.end})")
+
+
+if __name__ == "__main__":
+    main()
