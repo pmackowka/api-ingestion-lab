@@ -1,4 +1,4 @@
-# Architektura produkcyjna: formularz → HubSpot → BigQuery
+# Diagram sekwencji UML: formularz → HubSpot → BigQuery
 
 Diagram sekwencji UML: jak lead i deal powstają w prawdziwej firmie i jak trafiają do hurtowni.
 W tym repo kroki 1–9 udaje `generate.py`; kroki 10–11 to `ingest.py` — działa tak samo jak na produkcji.
