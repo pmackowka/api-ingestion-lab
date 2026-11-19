@@ -2,6 +2,8 @@
 
 Kursy średnie NBP do przeliczania przychodów z EUR i USD na PLN w etapie 7.
 
+Diagram sekwencji UML jednego uruchomienia: [`uml-diagram.md`](uml-diagram.md).
+
 ## Przykładowe uruchomienia
 
 ```bash

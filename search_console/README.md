@@ -2,6 +2,8 @@
 
 Dzienne kliknięcia, wyświetlenia i pozycje pmdata.pl w Google. W etapie 7 to drugie spojrzenie na ruch `google / organic`: Search Console widzi wyszukiwanie przed kliknięciem, GA4 — wizytę po nim.
 
+Diagram sekwencji UML jednego uruchomienia: [`uml-diagram.md`](uml-diagram.md).
+
 ## Konfiguracja
 
 Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko) — ADC z zakresem `webmasters.readonly`.

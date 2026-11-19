@@ -2,6 +2,8 @@
 
 Dzienne sesje według źródła ruchu i kliknięcia w kontakt na pmdata.pl. W etapie 7 to „ruch” w łańcuchu sesje → kontakty → leady → deale → faktury.
 
+Diagram sekwencji UML jednego uruchomienia: [`uml-diagram.md`](uml-diagram.md).
+
 ## Konfiguracja
 
 Najpierw [„Wspólne środowisko”](../docs/konfiguracja.md#wspólne-środowisko) — ADC z zakresem `analytics.readonly`.

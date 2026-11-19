@@ -2,6 +2,8 @@
 
 Dzienna pogoda dla 5 największych miast Polski — w etapie 7 wymiar dnia obok ruchu z GA4.
 
+Diagram sekwencji UML jednego uruchomienia: [`uml-diagram.md`](uml-diagram.md).
+
 ## Przykładowe uruchomienia
 
 ```bash
