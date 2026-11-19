@@ -88,8 +88,8 @@ jobs:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
         run: uv run python -m ${{ matrix.source }}.ingest --project $PROJECT --lookback-days $LOOKBACK_DAYS ${{ matrix.args }}
 
-  # Syntetyczne leady z kliknięć GA4 do HubSpota. Po ingeście, bo czyta świeże raw_ga4.contact_events_daily.
-  # Nowe leady trafią do BigQuery przy następnym przebiegu (ingest hubspot leci równolegle z GA4) —
+  # Syntetyczne leady i deale z kliknięć GA4 do HubSpota. Po ingeście, bo czyta świeże raw_ga4.contact_events_daily.
+  # Nowe leady i zmiany etapów deali trafią do BigQuery przy następnym przebiegu (ingest hubspot leci równolegle z GA4) —
   # dzień opóźnienia w danych syntetycznych za cenę prostego grafu zależności.
   # if: !cancelled() zamiast domyślnego success(): awaria np. NBP nie powinna blokować leadów z GA4.
   generate-leads:
@@ -107,7 +107,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen
-      - name: Generate HubSpot leads
+      - name: Generate HubSpot leads and deals
         env:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
         run: uv run python -m hubspot.generate --project $PROJECT --lookback-days $LOOKBACK_DAYS

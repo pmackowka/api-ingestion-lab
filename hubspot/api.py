@@ -16,11 +16,18 @@ API_VERSION = "2026-09"
 
 # Właściwości kontaktu dodawane przez generator. Wbudowane źródło HubSpota (hs_analytics_source)
 # jest tylko do odczytu — liczy je skrypt śledzący HubSpota na stronie, którego pmdata.pl nie ma.
-CUSTOM_PROPERTIES = [
+CONTACT_PROPERTIES = [
     {"name": "lead_source", "label": "Lead source (GA4 source / medium)", "type": "string", "fieldType": "text"},
     {"name": "lead_event", "label": "Lead event (GA4 contact click)", "type": "string", "fieldType": "text"},
     # type=date: wartość "YYYY-MM-DD", bez godziny — lead przypisany do doby GA4 (Europe/Warsaw).
     {"name": "lead_date", "label": "Lead date (GA4 day)", "type": "date", "fieldType": "date"},
+]
+
+# Klucz upsertu deali. Kontakt ma wbudowany unikalny `email`, deal nie ma żadnego naturalnego klucza —
+# bez niego drugie uruchomienie generatora tworzyłoby duplikaty. hasUniqueValue: HubSpot odrzuca drugi deal
+# z tą samą wartością, a batch/upsert może go użyć jako idProperty. Ustawienia nie da się zmienić po utworzeniu.
+DEAL_PROPERTIES = [
+    {"name": "deal_key", "label": "Deal key (generator)", "type": "string", "fieldType": "text", "hasUniqueValue": True},
 ]
 
 
