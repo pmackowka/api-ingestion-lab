@@ -1,4 +1,4 @@
-"""Faktury sprzedaży z Odoo JSON-2 API -> BigQuery (pełna migawka).
+"""Faktury sprzedaży i płatności z Odoo JSON-2 API -> BigQuery (pełna migawka obu tabel).
 
 Uruchomienie (klucz z .env, Odoo z odoo/docker-compose.yml):
     uv run --env-file .env python -m odoo.ingest --project <projekt-gcp> --lookback-days 7
@@ -18,14 +18,16 @@ from common import cli
 from common.bigquery import replace_table
 from odoo.api import make_client
 
-TARGET_TABLE = "invoices"
 PAGE_SIZE = 100
-FIELDS = [
+INVOICE_FIELDS = [
     "name", "ref", "partner_id", "invoice_date", "invoice_date_due", "currency_id",
     "amount_untaxed", "amount_tax", "amount_total", "state", "payment_state", "create_date", "write_date",
 ]
 
-SCHEMA = [
+PAYMENT_FIELDS = ["name", "date", "amount", "currency_id", "state", "payment_type", "reconciled_invoice_ids",
+                  "create_date", "write_date"]
+
+INVOICES_SCHEMA = [
     bigquery.SchemaField("invoice_id", "STRING", mode="REQUIRED"),
     # Numer nadawany przy księgowaniu (FV/2026/00001); szkic go nie ma.
     bigquery.SchemaField("invoice_number", "STRING", mode="NULLABLE"),
@@ -46,9 +48,23 @@ SCHEMA = [
     bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
 ]
 
+PAYMENTS_SCHEMA = [
+    bigquery.SchemaField("payment_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("payment_number", "STRING", mode="NULLABLE"),
+    # Faktura, którą płatność rozliczyła (najmniejsze ID, gdy kilka) — złączenie z invoices.
+    bigquery.SchemaField("invoice_id", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("payment_date", "DATE", mode="REQUIRED"),
+    bigquery.SchemaField("amount", "NUMERIC", mode="REQUIRED"),
+    bigquery.SchemaField("currency", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("state", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
+]
 
-def fetch_invoices(odoo, page_size: int = PAGE_SIZE) -> list[dict]:
-    """Krok 1: wszystkie faktury sprzedaży, strona po stronie (search_read z limit/offset).
+
+def fetch_records(odoo, model: str, domain: list, fields: list[str], page_size: int = PAGE_SIZE) -> list[dict]:
+    """Krok 1: wszystkie rekordy modelu, strona po stronie (search_read z limit/offset).
 
     Czwarty wzorzec końca paginacji w repo: Odoo nie podaje liczby rekordów ani kursora,
     więc koniec poznajemy po stronie krótszej niż limit (jak Search Console).
@@ -56,10 +72,7 @@ def fetch_invoices(odoo, page_size: int = PAGE_SIZE) -> list[dict]:
     """
     records, offset = [], 0
     while True:
-        page = odoo.call(
-            "account.move", "search_read",
-            domain=[["move_type", "=", "out_invoice"]], fields=FIELDS, limit=page_size, offset=offset, order="id",
-        )
+        page = odoo.call(model, "search_read", domain=domain, fields=fields, limit=page_size, offset=offset, order="id")
         records.extend(page)
         if len(page) < page_size:
             return records
@@ -77,7 +90,7 @@ def _amount(value: float) -> str:
 
 
 def to_rows(invoices: list[dict], loaded_at: datetime) -> list[dict]:
-    """Krok 2: rekord Odoo -> wiersz. False (pusta wartość w Odoo) -> None (NULL w BigQuery)."""
+    """Krok 2: faktura Odoo -> wiersz. False (pusta wartość w Odoo) -> None (NULL w BigQuery)."""
     rows = []
     for inv in invoices:
         partner_id, partner_name = _many2one(inv["partner_id"])
@@ -105,16 +118,42 @@ def to_rows(invoices: list[dict], loaded_at: datetime) -> list[dict]:
     return rows
 
 
+def payments_to_rows(payments: list[dict], loaded_at: datetime) -> list[dict]:
+    """Krok 2: płatność Odoo -> wiersz. reconciled_invoice_ids to lista ID (many2many), może być pusta."""
+    return [
+        {
+            "payment_id": str(p["id"]),
+            "payment_number": p["name"] or None,
+            "invoice_id": str(min(p["reconciled_invoice_ids"])) if p["reconciled_invoice_ids"] else None,
+            "payment_date": p["date"],
+            "amount": _amount(p["amount"]),
+            "currency": _many2one(p["currency_id"])[1],
+            "state": p["state"],
+            "created_at": p["create_date"],
+            "updated_at": p["write_date"],
+            "loaded_at": loaded_at.isoformat(),
+        }
+        for p in payments
+    ]
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Wspólny interfejs CLI; --start/--lookback-days przyjmowane, ale migawka obejmuje wszystkie faktury."""
+    """Wspólny interfejs CLI; --start/--lookback-days przyjmowane, ale migawka obejmuje wszystkie rekordy."""
     return cli.parse(cli.make_parser("Odoo JSON-2 API -> BigQuery", default_dataset="raw_odoo"), argv)
 
 
 def main() -> None:
     args = parse_args()
-    rows = to_rows(fetch_invoices(make_client()), datetime.now(timezone.utc))
-    replace_table(rows, project=args.project, dataset=args.dataset, table=TARGET_TABLE, schema=SCHEMA)
-    print(f"{TARGET_TABLE}: {len(rows)} faktur (pełna migawka)")
+    odoo = make_client()
+    loaded_at = datetime.now(timezone.utc)
+    invoices = to_rows(fetch_records(odoo, "account.move", [["move_type", "=", "out_invoice"]], INVOICE_FIELDS), loaded_at)
+    # Tylko wpłaty od klientów; zwroty i płatności dostawcom to payment_type outbound.
+    payments = payments_to_rows(
+        fetch_records(odoo, "account.payment", [["payment_type", "=", "inbound"]], PAYMENT_FIELDS), loaded_at
+    )
+    replace_table(invoices, project=args.project, dataset=args.dataset, table="invoices", schema=INVOICES_SCHEMA)
+    replace_table(payments, project=args.project, dataset=args.dataset, table="payments", schema=PAYMENTS_SCHEMA)
+    print(f"invoices: {len(invoices)}, payments: {len(payments)} (pełna migawka)")
 
 
 if __name__ == "__main__":
