@@ -1,6 +1,6 @@
 # api-ingestion-lab
 
-Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze, z komentarzami po polsku tłumaczącymi mechanizm. Kierunek: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda).
+Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze. Kierunek: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda).
 
 ## Połączenia
 
@@ -23,57 +23,46 @@ Każdy folder ma własny README z konfiguracją krok po kroku.
 - *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types); dane wgrywa nasz skrypt.
 - *syntetyczne (open source lokalnie)* — Odoo z fakturami wystawianymi przez nasz skrypt; SAP i polskie ERP nie mają darmowego środowiska z API, a Odoo daje te same typy danych i PostgreSQL do ćwiczenia CDC.
 
-Jak łączą się źródła: GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Złączenie jest więc po `data × źródło`: syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik.
+## Klucze łączące źródła
+
+GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik. Dlatego CRM i ERP łączą się kluczami rekordów, a GA4 z resztą — tylko wspólnymi wymiarami `data × źródło`.
+
+```
+ POZIOM REKORDU (klucz 1:1 / 1:N, łączy konkretne wiersze)
+ ─────────────────────────────────────────────────────────
+ raw_hubspot.contacts        raw_hubspot.deals          raw_odoo.invoices          raw_odoo.payments
+ ┌──────────────────┐        ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+ │ contact_id   PK  │◄──1:N──│ contact_id   FK  │       │ invoice_id   PK  │◄─1:N──│ invoice_id   FK  │
+ │ email            │        │ deal_id      PK  │       │ deal_key (ref)   │       │ payment_id   PK  │
+ │ lead_source ─────┼──┐     │ deal_key     UQ  │◄─1:1──│ partner_id       │       │ payment_date     │
+ │ lead_date   ─────┼──┤     │ dealstage,amount │       │ invoice_date     │       │ amount           │
+ └──────────────────┘  │     │ closedate        │       │ amount_total     │       └──────────────────┘
+                       │     └──────────────────┘       │ currency         │
+                       │                                └──────────────────┘
+ POZIOM AGREGATU (wspólne wymiary: data × źródło, bez użytkowników)
+ ──────────────────────│──────────────────────────────────────────────────
+                       ▼
+               ┌───────────────┐   lead_source = session_source || ' / ' || session_medium
+               │   dim_source  │◄──────────────── raw_ga4.traffic_daily, raw_ga4.contact_events_daily
+               └───────────────┘                  (report_date, session_source, session_medium)
+               ┌───────────────┐   lead_date, invoice_date, payment_date, closedate
+               │   dim_date    │◄──────────────── raw_ga4.*.report_date
+               └───────┬───────┘                  raw_search_console.*.report_date
+                       ├──────── raw_weather.daily_weather.weather_date
+                       └──────── raw_nbp.exchange_rates_a.effective_date
+```
+
+- Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
+- Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
+- Search Console nie ma wymiaru źródła — w całości to `google / organic`.
+- Pogoda i NBP łączą się tylko datą; NBP nie publikuje kursów w weekendy i święta, a tabela A nie zawiera PLN.
+- `invoices.partner_id` to klient w Odoo bez e-maila — z kontaktem łączy go `deal_key`, nie partner.
 
 ## Jak dane trafiają do BigQuery
 
-Pobranie i spłaszczenie są w `<system>/ingest.py`, zapis (kroki 4a i 4b) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py), interfejs CLI w [`common/cli.py`](common/cli.py).
+Pobranie i spłaszczenie są w `<system>/ingest.py`, zapis (staging + podmiana zakresu) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py), interfejs CLI w [`common/cli.py`](common/cli.py).
 
-### Jedno uruchomienie krok po kroku (przykład: NBP)
-
-`--lookback-days 7` uruchomione 17.11.2026; tabela ma dane od 02.01.2025 do 14.11.2026, a NBP poprawiło kurs z 12.11.
-
-```
- PYTHON (Twój Mac / runner)              BIGQUERY (serwery Google)
- ──────────────────────────              ─────────────────────────────────────────
-
- 1. parse_args + split_windows:
-    start = 17.11 − 7 = 10.11
-    end   = 17.11  (8 dni, jedno okno)
-
- 2. fetch_window (API NBP)
-    → dni z notowaniami 10–17.11
-      (12.11 już w nowej wersji)
-
- 3. to_rows: spłaszczenie
-    → 5 dni × 32 waluty = 160 wierszy
-      (11.11 święto, 15–16.11 weekend)
-
- 4a. load_table_from_json ─────────────▶ _staging_exchange_rates_a
-     (WRITE_TRUNCATE)                    ┌───────────────────────┐
-                                         │ 10.11 … 17.11  (nowe) │  poprzednia zawartość
-                                         └───────────────────────┘  stagingu wyrzucona
-
- 4b. client.query(rewrite_sql) ────────▶ wykonanie SQL:
-
-                exchange_rates_a (przed)              _staging
-                ┌──────────────────────┐              ┌───────────────┐
-                │ 02.01.2025 … 09.11   │──┐           │ 10.11 … 17.11 │
-                │ 10.11 … 14.11 (stare)│✗ │           └───────┬───────┘
-                └──────────────────────┘  │ WHERE NOT BETWEEN │
-                                          ▼                   ▼
-                                ┌──────────────────────────────────┐
-                                │ UNION ALL = sklejenie pod sobą   │
-                                │ 02.01.2025 … 09.11  (z tabeli)   │
-                                │ 10.11 … 17.11       (ze stagingu)│
-                                └────────────────┬─────────────────┘
-                                                 │ WRITE_TRUNCATE_DATA
-                                                 ▼
-                                exchange_rates_a (po) — zapisana od nowa w całości:
-                                historia skopiowana bez zmian, 10–17.11 wymienione
-```
-
-Treść zmienia się tylko w zakresie `[start, end]`, ale BigQuery zapisuje całą tabelę od nowa; historia pochodzi ze starej wersji tabeli, nie z API. Bez `NOT BETWEEN` dni 10–14.11 byłyby dwa razy.
+Przykład jednego uruchomienia krok po kroku (NBP): [`nbp/README.md`](nbp/README.md#jedno-uruchomienie-krok-po-kroku).
 
 ### Strategie ładowania
 
