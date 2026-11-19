@@ -1,0 +1,45 @@
+# Lokalne Odoo (ERP) dla etapu 6: faktury do wygranych deali z HubSpota.
+#
+# Odizolowane od innych kontenerów na tym Macu (np. n8n): własna nazwa projektu compose,
+# a więc własna sieć i wolumeny z prefiksem odoo_. Usunięcie całości, bez ruszania reszty:
+#   docker compose -p odoo down -v
+#
+# Hasła "odoo" jak w przykładzie oficjalnego obrazu: baza nie wystawia portu na zewnątrz,
+# a Odoo słucha tylko na 127.0.0.1 — z innej maszyny w sieci nie da się połączyć.
+name: odoo
+
+services:
+  db:
+    # Odoo 19+ wymaga PostgreSQL >= 13.
+    image: postgres:17
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 5s
+      retries: 10
+
+  web:
+    # Tag z datą zamiast "20.0": ten sam obraz przy każdym `up`, aktualizacja świadomą zmianą.
+    image: odoo:20.0-20261112
+    depends_on:
+      db:
+        condition: service_healthy
+    # HOST/USER/PASSWORD: połączenie z bazą (domyślnie db/odoo/odoo, podane jawnie dla czytelności).
+    environment:
+      HOST: db
+      USER: odoo
+      PASSWORD: odoo
+    ports:
+      - "127.0.0.1:8069:8069"
+    volumes:
+      # Filestore: załączniki i sesje Odoo.
+      - web_data:/var/lib/odoo
+
+volumes:
+  db_data:
+  web_data:

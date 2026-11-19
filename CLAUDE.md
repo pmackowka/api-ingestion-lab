@@ -14,7 +14,7 @@ tłumaczyć mechanizm i powód decyzji, nie tylko opisywać, co robi linia.
 
 Kierunek: dane analityka internetowego połączone z danymi biznesowymi (lead-to-cash): pogoda z Open-Meteo,
 GA4 i Search Console z pmdata.pl (prawdziwe), CRM HubSpot (konto testowe, dane syntetyczne), ERP Odoo (lokalnie w Dockerze,
-dane demo), model w dbt. Repo może stać się publiczne:
+dane syntetyczne), model w dbt. Repo może stać się publiczne:
 żadnych odniesień do szukania pracy, ogłoszeń ani nazw firm w plikach repo.
 Google Ads API i wątek ad-tech (GAM, SSP, Prebid) — świadomie poza zakresem.
 Złączenie GA4 z CRM jest na agregatach `data × źródło` (Data API nie ma użytkowników, strona nie ma formularza);
@@ -23,8 +23,8 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
-Stan na 2026-11-19: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`) i 5 (`hubspot/`, konto testowe HubSpot: kontakty i deale) działają; etapy 6–7 są planowane, ich foldery jeszcze nie istnieją.
-Następny krok: etap 6 (`odoo/`, Odoo w Dockerze) — faktury do wygranych deali (`deal_key`). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-19: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`), 5 (`hubspot/`, konto testowe HubSpot: kontakty i deale) i 6 (`odoo/`, Odoo 20 lokalnie w Dockerze: faktury) działają; etap 7 jest planowany.
+Następny krok: płatności faktur w Odoo (`payment_state`), potem etap 7 (dbt). Ingest Odoo działa tylko lokalnie — poza `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 1:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`; w etapie 7 dojdzie job `dbt` z `needs: ingest`. Uzasadnienie wariantu
@@ -36,6 +36,8 @@ Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypom
 2. Usunięcie `.env` z tokenem, sekretu `HUBSPOT_ACCESS_TOKEN` w GitHub, konta testowego, projektu aplikacji i klucza osobistego w HubSpot.
 3. Usunięcie reguły `Bash(uv run --env-file .env python -m hubspot.*)` z `.claude/settings.local.json` — przywraca blokadę
    uruchamiania przez Claude Code kodu, który czyta tokeny z `.env`.
+4. Odoo: `docker compose -p odoo down -v` (tylko projekt `odoo`, n8n w Dockerze zostaje), usunięcie `ODOO_API_KEY` z `.env`
+   i reguły `Bash(uv run --env-file .env python -m odoo.*)` z `.claude/settings.local.json`.
 
 ## Struktura
 
