@@ -26,7 +26,7 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 Stan na 2026-11-18: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`) i 5 (`hubspot/`, konto testowe HubSpot) działają; etapy 6–7 są planowane, ich foldery jeszcze nie istnieją.
 Następny krok: etap 6 (`odoo/`, Odoo w Dockerze) albo deale w HubSpot (wymagają scope `crm.schemas.deals.write` dla unikalnego klucza upsertu). Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
-Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 3:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
+Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 1:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`; w etapie 7 dojdzie job `dbt` z `needs: ingest`. Uzasadnienie wariantu
 w `docs/orkiestracja.md` (matrix / osobny job na źródło / jeden job z krokami / osobny workflow na źródło / Airflow). Warunek matrix: każdy `<system>/ingest.py`
 ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
