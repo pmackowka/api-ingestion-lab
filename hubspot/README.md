@@ -2,7 +2,7 @@
 
 Dwa skrypty. `generate.py` zamienia kliknięcia w kontakt z GA4 w syntetyczne leady w HubSpot: lead dziedziczy źródło i medium kliknięcia, więc proporcje źródeł zgadzają się z GA4. Część leadów dostaje deal powiązany z kontaktem. `ingest.py` pobiera kontakty i deale z powrotem przez CRM API do BigQuery — tak jak z każdego CRM. W etapie 7 to „leady” w łańcuchu sesje → kontakty → leady → deale.
 
-Jak to wygląda w prawdziwej firmie (formularz → backend → kolejka → HubSpot → BigQuery): [diagram sekwencji UML](architektura.md).
+Jak to wygląda w prawdziwej firmie (formularz → backend → kolejka → HubSpot → BigQuery): [diagram sekwencji UML](uml-diagram.md).
 
 ## Konfiguracja
 
