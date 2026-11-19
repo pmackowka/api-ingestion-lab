@@ -26,7 +26,7 @@ Koszt macierzy: każdy job osobno instaluje uv i zależności (z cache) i w pryw
 
 | Element | Po co |
 |---|---|
-| `schedule` 3:41 z `timezone: Europe/Warsaw` | czas polski bez przeliczania na UTC (także po zmianie czasu); noc, bo w dzień runnery są obciążone i przebiegi z harmonogramu bywają opóźnione albo pomijane; minuta inna niż :00, bo szczyt przypada na początek godziny; nie 2:xx, bo przy zmianie czasu ta godzina raz w roku nie istnieje, a raz występuje dwukrotnie |
+| `schedule` 1:41 z `timezone: Europe/Warsaw` | czas polski bez przeliczania na UTC (także po zmianie czasu); noc, bo w dzień runnery są obciążone i przebiegi z harmonogramu bywają opóźnione albo pomijane; minuta inna niż :00, bo szczyt przypada na początek godziny; nie 2:xx, bo przy zmianie czasu ta godzina raz w roku nie istnieje, a raz występuje dwukrotnie |
 | `workflow_dispatch` | ręczny przebieg: test po zmianie, nadrobienie dnia |
 | `permissions: id-token: write` | job może poprosić GitHuba o token OIDC — bez tego WIF nie zadziała |
 | `concurrency` bez anulowania | dwa przebiegi naraz pisałyby do tych samych tabel; drugi czeka |

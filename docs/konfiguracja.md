@@ -49,7 +49,7 @@ Dalej: sekcja „Konfiguracja” w README konkretnego folderu (kroki specyficzne
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) codziennie o 3:41 czasu polskiego uruchamia każde źródło z `--lookback-days 7` jako osobny job macierzy — awaria jednego nie zatrzymuje pozostałych. Porównanie wariantów: [orkiestracja.md](orkiestracja.md).
+Workflow [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) codziennie o 1:41 czasu polskiego uruchamia każde źródło z `--lookback-days 7` jako osobny job macierzy — awaria jednego nie zatrzymuje pozostałych. Porównanie wariantów: [orkiestracja.md](orkiestracja.md).
 
 Konfiguracja (raz, po [„Wspólnym środowisku”](#wspólne-środowisko)):
 

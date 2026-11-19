@@ -13,13 +13,13 @@ name: Pipeline
 
 on:
   schedule:
-    # Codziennie 3:41 czasu polskiego. Noc, bo w dzień runnery GitHuba są obciążone
+    # Codziennie 1:41 czasu polskiego. Noc, bo w dzień runnery GitHuba są obciążone
     # i przebiegi z harmonogramu bywają opóźnione albo pomijane; minuta nie jest pełna,
     # bo szczyt przypada na początek każdej godziny.
     # Nie 2:xx: przy zmianie czasu ta godzina raz w roku nie istnieje (marzec), a raz
-    # występuje dwa razy (październik). 3:xx występuje zawsze dokładnie raz.
+    # występuje dwa razy (październik). 1:xx występuje zawsze dokładnie raz.
     # Kurs NBP z danego dnia (publikacja 11:45–12:15) wpada w nocy następnego dnia.
-    - cron: '41 3 * * *'
+    - cron: '41 1 * * *'
       timezone: 'Europe/Warsaw'
   # Ręczne uruchomienie z zakładki Actions (test, nadrobienie dnia).
   workflow_dispatch:
