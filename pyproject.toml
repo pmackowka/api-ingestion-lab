@@ -9,6 +9,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+dbt = [
+    "dbt-oss>=2.0.11",
+]
 dev = [
     "pytest>=9.2.0",
 ]
