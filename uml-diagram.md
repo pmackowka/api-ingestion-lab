@@ -97,12 +97,12 @@ sequenceDiagram
         participant R as raw_ga4.traffic_daily
     end
     participant D as dbt build
-    box transparent Silver — dane oczyszczone
-        participant STG as stg_ga4__traffic_daily
-        participant INT as int_* (złączenia)
+    box transparent Silver — dw_prod: widoki stg_*, int_*
+        participant STG as dw_prod.stg_ga4__traffic_daily
+        participant INT as dw_prod.int_* (złączenia)
     end
-    box transparent Gold — gwiazda
-        participant M as dim_date, dim_source, fct_traffic_daily
+    box transparent Gold — dw_prod: tabele dim_*, fct_*
+        participant M as dw_prod.dim_date, dw_prod.dim_source, dw_prod.fct_traffic_daily
     end
     actor A as Analityk / dashboard
 
@@ -122,7 +122,7 @@ sequenceDiagram
 | Krok | Po co |
 |---|---|
 | 4–5 | bronze: kopia źródła 1:1, cała historia; schowek `_staging_*` służy tylko do podmiany zakresu |
-| 8 | silver: jeden model `stg_*` na jedną tabelę `raw_*`, bez złączeń i agregacji |
+| 8 | silver: jeden model `stg_*` na jedną tabelę `raw_*`, bez złączeń i agregacji; wszystkie modele dbt w jednym datasecie `dw_prod` (lokalnie `dw_dev`), warstwę wskazuje prefiks |
 | 9 | silver: złączenia między źródłami, np. faktura → deal → kontakt |
 | 10 | gold: gwiazda Kimballa — wymiary wspólne dla wszystkich faktów |
 | 11 | raporty czytają tylko gold, nigdy `raw_*` |
