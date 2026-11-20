@@ -79,7 +79,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
   - tabele wygasają po 60 dniach — po wygaśnięciu ingest uruchamia się ponownie z pełnym zakresem.
 - Poświadczenia: ADC z podszywaniem się pod konto usługi `ingest-runner` (bez pliku z kluczem), zakresy
   `cloud-platform` + `analytics.readonly` + `webmasters.readonly`; konfiguracja w `docs/konfiguracja.md`.
-  Konto usługi ma w projekcie tylko `bigquery.dataEditor` i `bigquery.jobUser`, w GA4 rolę Widz, w Search Console uprawnienie Ograniczone.
+  Konto usługi ma w projekcie tylko `bigquery.dataEditor`, `bigquery.jobUser` i `bigquery.readSessionUser` (dbt v2), w GA4 rolę Widz, w Search Console uprawnienie Ograniczone.
 - Datasety surowe mają prefiks `raw_` (np. `raw_nbp`) i lokalizację **EU** (`LOCATION` w `common/bigquery.py`) — polityka
   prywatności pmdata.pl obiecuje przechowywanie w UE. Lokalizacji nie da się zmienić: zła = usunąć dataset i backfill.
 

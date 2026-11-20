@@ -26,9 +26,11 @@ gcloud services enable bigquery.googleapis.com --project=$PROJECT
 # 4. Konto usługi: osobna tożsamość dla skryptów, ta sama lokalnie i w harmonogramie (GitHub Actions + WIF).
 gcloud iam service-accounts create ingest-runner --project=$PROJECT --display-name="Ingest runner (GA4, BigQuery)"
 
-# 5. Najmniejsze potrzebne uprawnienia w BigQuery: tworzenie tabel i zapis (dataEditor), uruchamianie zadań (jobUser).
+# 5. Najmniejsze potrzebne uprawnienia w BigQuery: tworzenie tabel i zapis (dataEditor), uruchamianie zadań (jobUser),
+#    odczyt przez Storage Read API, którego wymaga dbt v2 (readSessionUser).
 gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/bigquery.dataEditor --condition=None
 gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/bigquery.jobUser --condition=None
+gcloud projects add-iam-policy-binding $PROJECT --member=serviceAccount:$SA --role=roles/bigquery.readSessionUser --condition=None
 
 # 6. Twoje konto może generować krótkotrwałe tokeny konta usługi — zamiast pliku z kluczem, który mógłby wyciec.
 gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT --member=user:$ME --role=roles/iam.serviceAccountTokenCreator
