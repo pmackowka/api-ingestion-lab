@@ -1,0 +1,16 @@
+sources:
+  - name: ga4
+    description: Agregaty z GA4 Data API (usługa pmdata.pl), ładowane przez ga4/ingest.py.
+    schema: raw_ga4
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: hour}
+        error_after: {count: 54, period: hour}
+    tables:
+      - name: traffic_daily
+        description: Ruch dzienny; jeden wiersz = dzień × source × medium.
+      - name: contact_events_daily
+        description: Kliknięcia w kontakt; jeden wiersz = dzień × source × medium × zdarzenie.
+        config:
+          freshness: null
