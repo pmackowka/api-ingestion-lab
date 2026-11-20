@@ -92,16 +92,16 @@ sequenceDiagram
     participant GH as GitHub Actions (pipeline.yml)
     participant I as ga4/ingest.py
     participant API as GA4 Data API
-    box Bronze — dane surowe (raw_*)
+    box transparent Bronze — dane surowe (raw_*)
         participant S as raw_ga4._staging_traffic_daily
         participant R as raw_ga4.traffic_daily
     end
     participant D as dbt build
-    box Silver — dane oczyszczone
+    box transparent Silver — dane oczyszczone
         participant STG as stg_ga4__traffic_daily
         participant INT as int_* (złączenia)
     end
-    box Gold — gwiazda
+    box transparent Gold — gwiazda
         participant M as dim_date, dim_source, fct_traffic_daily
     end
     actor A as Analityk / dashboard
@@ -126,3 +126,5 @@ sequenceDiagram
 | 9 | silver: złączenia między źródłami, np. faktura → deal → kontakt |
 | 10 | gold: gwiazda Kimballa — wymiary wspólne dla wszystkich faktów |
 | 11 | raporty czytają tylko gold, nigdy `raw_*` |
+
+Kiedy powstaje dziura: `--lookback-days 7` pobiera ostatnie 7 dni od dziś, więc przerwa w harmonogramie dłuższa niż 7 dni zostawia w `raw_*` dni bez danych — trzeba wtedy uruchomić ingest ręcznie z `--start`. dbt tej dziury nie załata: modele czytają tylko to, co jest w `raw_*`.
