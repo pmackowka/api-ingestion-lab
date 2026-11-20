@@ -1,0 +1,12 @@
+sources:
+  - name: weather
+    description: Pogoda dzienna dla pięciu miast z Open-Meteo, ładowana przez weather/ingest.py.
+    schema: raw_weather
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: hour}
+        error_after: {count: 54, period: hour}
+    tables:
+      - name: daily_weather
+        description: Pogoda dzienna; jeden wiersz = dzień × miasto.
