@@ -1,0 +1,9 @@
+api_ingestion_lab:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: api-ingestion-lab-bq
+      dataset: dw
+      location: EU

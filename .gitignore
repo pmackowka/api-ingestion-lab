@@ -12,3 +12,9 @@ service-account*.json
 
 # macOS
 .DS_Store
+
+# dbt
+model/target/
+model/logs/
+model/dbt_packages/
+model/.user.yml

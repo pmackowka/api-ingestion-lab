@@ -1,0 +1,22 @@
+name: api_ingestion_lab
+
+profile: api_ingestion_lab
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  api_ingestion_lab:
+    +static_analysis: strict
+    staging:
+      +materialized: view
+      +schema: silver
+    intermediate:
+      +materialized: view
+      +schema: silver
+    marts:
+      +materialized: table
+      +schema: gold
