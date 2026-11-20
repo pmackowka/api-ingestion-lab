@@ -27,30 +27,7 @@ Każdy folder ma własny README z konfiguracją krok po kroku.
 
 GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik. Dlatego CRM i ERP łączą się kluczami rekordów, a GA4 z resztą — tylko wspólnymi wymiarami `data × źródło`.
 
-```
- POZIOM REKORDU (klucz 1:1 / 1:N, łączy konkretne wiersze)
- ─────────────────────────────────────────────────────────
- raw_hubspot.contacts        raw_hubspot.deals          raw_odoo.invoices          raw_odoo.payments
- ┌──────────────────┐        ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
- │ contact_id   PK  │◄──1:N──│ contact_id   FK  │       │ invoice_id   PK  │◄─1:N──│ invoice_id   FK  │
- │ email            │        │ deal_id      PK  │       │ deal_key (ref)   │       │ payment_id   PK  │
- │ lead_source ─────┼──┐     │ deal_key     UQ  │◄─1:1──│ partner_id       │       │ payment_date     │
- │ lead_date   ─────┼──┤     │ dealstage,amount │       │ invoice_date     │       │ amount           │
- └──────────────────┘  │     │ closedate        │       │ amount_total     │       └──────────────────┘
-                       │     └──────────────────┘       │ currency         │
-                       │                                └──────────────────┘
- POZIOM AGREGATU (wspólne wymiary: data × źródło, bez użytkowników)
- ──────────────────────│──────────────────────────────────────────────────
-                       ▼
-               ┌───────────────┐   lead_source = session_source || ' / ' || session_medium
-               │   dim_source  │◄──────────────── raw_ga4.traffic_daily, raw_ga4.contact_events_daily
-               └───────────────┘                  (report_date, session_source, session_medium)
-               ┌───────────────┐   lead_date, invoice_date, payment_date, closedate
-               │   dim_date    │◄──────────────── raw_ga4.*.report_date
-               └───────┬───────┘                  raw_search_console.*.report_date
-                       ├──────── raw_weather.daily_weather.weather_date
-                       └──────── raw_nbp.exchange_rates_a.effective_date
-```
+Diagram klas UML z kluczami i krotnościami: [`uml-diagram.md`](uml-diagram.md).
 
 - Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
 - Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
