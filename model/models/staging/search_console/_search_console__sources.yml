@@ -1,0 +1,14 @@
+sources:
+  - name: search_console
+    description: Wyniki wyszukiwania Google dla pmdata.pl z Search Console API, ładowane przez search_console/ingest.py.
+    schema: raw_search_console
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: hour}
+        error_after: {count: 54, period: hour}
+    tables:
+      - name: search_daily
+        description: Wyniki dzienne; jeden wiersz = dzień × kraj × urządzenie.
+      - name: search_pages_daily
+        description: Wyniki stron; jeden wiersz = dzień × strona.
