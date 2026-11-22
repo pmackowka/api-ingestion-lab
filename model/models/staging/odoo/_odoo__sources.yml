@@ -1,0 +1,9 @@
+sources:
+  - name: odoo
+    description: Faktury i płatności z lokalnego Odoo w Dockerze (dane syntetyczne), ładowane ręcznie przez odoo/ingest.py — poza pipeline.yml, więc bez freshness.
+    schema: raw_odoo
+    tables:
+      - name: invoices
+        description: Faktury sprzedaży; jeden wiersz = faktura dla wygranego deala (deal_key).
+      - name: payments
+        description: Wpłaty od klientów; jeden wiersz = płatność rozliczająca jedną fakturę (invoice_id).
