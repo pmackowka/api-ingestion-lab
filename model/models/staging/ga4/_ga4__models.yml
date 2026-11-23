@@ -1,0 +1,21 @@
+models:
+  - name: stg_ga4__traffic_daily
+    description: Ruch dzienny bez wejść z Tag Assistanta; jeden wiersz = dzień × source × medium.
+    data_tests:
+      # generic wbudowany: unique na wyrażeniu (ziarno modelu)
+      - unique:
+          arguments:
+            column_name: "concat(cast(report_date as string), '|', source, '|', medium)"
+    columns:
+      - name: report_date
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: source
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: medium
+        data_tests:
+          # generic wbudowany
+          - not_null
