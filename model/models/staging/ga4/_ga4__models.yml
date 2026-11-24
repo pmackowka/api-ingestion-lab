@@ -26,3 +26,38 @@ models:
         data_tests:
           # generic wbudowany
           - not_null
+
+  - name: stg_ga4__contact_events_daily
+    description: Kliknięcia w kontakt bez wejść z Tag Assistanta; jeden wiersz = dzień × source × medium × zdarzenie.
+    data_tests:
+      # generic z paczki: ziarno modelu (dzień × source × medium × zdarzenie) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - report_date
+              - source
+              - medium
+              - event_name
+      # generic z paczki: GA4 nie zwraca wierszy z zerową liczbą zdarzeń
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "event_count > 0"
+    columns:
+      - name: report_date
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: source
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: medium
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: event_name
+        data_tests:
+          # generic wbudowany: tylko zdarzenia kontaktu z CONTACT_EVENTS w ga4/ingest.py
+          - accepted_values:
+              arguments:
+                values: ["phone_reveal", "linkedin_click", "email_click", "email_reveal"]
