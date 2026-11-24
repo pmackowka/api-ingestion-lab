@@ -1,0 +1,50 @@
+models:
+  - name: stg_odoo__invoices
+    description: Faktury sprzedaży z Odoo; jeden wiersz = faktura dla wygranego deala.
+    data_tests:
+      # generic z paczki: brutto = netto + VAT
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "amount_untaxed + amount_tax = amount_total"
+      # generic z paczki: faktura sprzedaży ma dodatnią kwotę
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "amount_total > 0"
+      # generic z paczki: termin płatności nie wypada przed datą wystawienia
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "due_date >= invoice_date"
+    columns:
+      - name: invoice_id
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: invoice_number
+        data_tests:
+          # generic wbudowany: numer faktury nie może się powtórzyć
+          - unique
+      - name: deal_key
+        data_tests:
+          # generic wbudowany: generator wystawia najwyżej jedną fakturę na deal
+          - unique
+          # generic wbudowany
+          - not_null
+          # generic wbudowany: faktura wskazuje istniejący deal z HubSpota
+          - relationships:
+              arguments:
+                to: ref('stg_hubspot__deals')
+                field: deal_key
+      - name: state
+        data_tests:
+          # generic wbudowany: stany account.move w Odoo 20
+          - accepted_values:
+              arguments:
+                values: ["draft", "posted", "cancel"]
+      - name: payment_state
+        data_tests:
+          # generic wbudowany: PAYMENT_STATE_SELECTION z account.move w Odoo 20
+          - accepted_values:
+              arguments:
+                values: ["not_paid", "in_payment", "paid", "partial", "reversed", "blocked", "invoicing_legacy"]
