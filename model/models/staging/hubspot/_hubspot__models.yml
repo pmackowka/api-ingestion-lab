@@ -1,0 +1,29 @@
+models:
+  - name: stg_hubspot__contacts
+    description: Kontakty z flagą leadów testowych; jeden wiersz = kontakt.
+    data_tests:
+      # generic z paczki: prawdziwy lead ma zdarzenie i datę z GA4
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "is_test_lead or (lead_event is not null and lead_date is not null)"
+    columns:
+      - name: contact_id
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: email
+        data_tests:
+          # generic wbudowany: HubSpot rozpoznaje kontakt po adresie e-mail
+          - unique
+      - name: lead_event
+        data_tests:
+          # generic wbudowany: tylko zdarzenia kontaktu z CONTACT_EVENTS w ga4/ingest.py
+          - accepted_values:
+              arguments:
+                values: ["phone_reveal", "linkedin_click", "email_click", "email_reveal"]
+      - name: is_test_lead
+        data_tests:
+          # generic wbudowany
+          - not_null
