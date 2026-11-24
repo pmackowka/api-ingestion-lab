@@ -1,0 +1,14 @@
+unit_tests:
+  # unit: filtr Tag Assistanta i składanie source_medium
+  - name: test_traffic_daily_drops_tag_assistant_and_builds_source_medium
+    model: stg_ga4__traffic_daily
+    given:
+      - input: source('ga4', 'traffic_daily')
+        rows:
+          - {report_date: 2026-11-01, session_source: google, session_medium: organic, sessions: 5}
+          - {report_date: 2026-11-01, session_source: (direct), session_medium: (none), sessions: 3}
+          - {report_date: 2026-11-01, session_source: tagassistant.google.com, session_medium: referral, sessions: 2}
+    expect:
+      rows:
+        - {source: google, medium: organic, source_medium: google / organic, sessions: 5}
+        - {source: (direct), medium: (none), source_medium: (direct) / (none), sessions: 3}
