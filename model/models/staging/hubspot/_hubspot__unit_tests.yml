@@ -13,3 +13,18 @@ unit_tests:
         - {contact_id: "1", is_test_lead: false}
         - {contact_id: "2", is_test_lead: true}
         - {contact_id: "3", is_test_lead: true}
+
+  # unit: data zamknięcia liczona w strefie Europe/Warsaw, nie w UTC
+  - name: test_deals_close_date_in_warsaw_time
+    model: stg_hubspot__deals
+    given:
+      - input: source('hubspot', 'deals')
+        rows:
+          - {deal_id: "1", closedate: "2026-11-30 23:30:00+00"}
+          - {deal_id: "2", closedate: "2026-06-30 22:30:00+00"}
+          - {deal_id: "3", closedate: "2026-11-30 12:00:00+00"}
+    expect:
+      rows:
+        - {deal_id: "1", close_date: 2026-12-01}
+        - {deal_id: "2", close_date: 2026-07-01}
+        - {deal_id: "3", close_date: 2026-11-30}
