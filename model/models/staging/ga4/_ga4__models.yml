@@ -2,10 +2,17 @@ models:
   - name: stg_ga4__traffic_daily
     description: Ruch dzienny bez wejść z Tag Assistanta; jeden wiersz = dzień × source × medium.
     data_tests:
-      # generic wbudowany: unique na wyrażeniu (ziarno modelu)
-      - unique:
+      # generic z paczki: ziarno modelu (dzień × source × medium) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
           arguments:
-            column_name: "concat(cast(report_date as string), '|', source, '|', medium)"
+            combination_of_columns:
+              - report_date
+              - source
+              - medium
+      # generic z paczki: sesje zaangażowane to podzbiór wszystkich sesji
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "engaged_sessions <= sessions"
     columns:
       - name: report_date
         data_tests:

@@ -85,7 +85,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 ## Konwencje
 
-- Kod i nazwy po angielsku, docstringi (jedno zdanie) i README po polsku. Bez komentarzy w kodzie i YAML — wyjątek: każdy test dbt ma jedną linię komentarza z typem testu (generic wbudowany, generic własny, singular, unit).
+- Kod i nazwy po angielsku, docstringi (jedno zdanie) i README po polsku. Bez komentarzy w kodzie i YAML — wyjątek: każdy test dbt ma jedną linię komentarza z typem testu (generic wbudowany, generic z paczki, singular, unit); własne testy generic — z paczki (`dbt_utils`), nie z własnych makr.
 - Fakty o API (limity, kody błędów, format odpowiedzi) sprawdzaj na żywo albo w dokumentacji
   i zapisuj w README folderu z datą sprawdzenia — nie z pamięci.
 - Wzorzec ingestu (z `nbp/`): okna/paginacja → pobranie → spłaszczenie do wierszy → load do
