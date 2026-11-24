@@ -27,3 +27,43 @@ models:
         data_tests:
           # generic wbudowany
           - not_null
+
+  - name: stg_hubspot__deals
+    description: Deale z datą zamknięcia w strefie Europe/Warsaw; jeden wiersz = deal.
+    data_tests:
+      # generic z paczki: wartość deala jest zawsze dodatnia
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "amount > 0"
+    columns:
+      - name: deal_id
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: deal_key
+        data_tests:
+          # generic wbudowany: klucz, po którym faktura z Odoo wskazuje deal
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: contact_id
+        data_tests:
+          # generic wbudowany
+          - not_null
+          # generic wbudowany: każdy deal należy do istniejącego kontaktu
+          - relationships:
+              arguments:
+                to: ref('stg_hubspot__contacts')
+                field: contact_id
+      - name: dealstage
+        data_tests:
+          # generic wbudowany: etapy pipeline'u default z OPEN_STAGES w hubspot/generate.py oraz zamknięcia
+          - accepted_values:
+              arguments:
+                values: ["appointmentscheduled", "qualifiedtobuy", "presentationscheduled", "decisionmakerboughtin", "contractsent", "closedwon", "closedlost"]
+      - name: close_date
+        data_tests:
+          # generic wbudowany
+          - not_null
