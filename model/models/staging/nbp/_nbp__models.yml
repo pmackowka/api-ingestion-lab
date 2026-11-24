@@ -1,0 +1,31 @@
+models:
+  - name: stg_nbp__exchange_rates_a
+    description: Średnie kursy walut z tabeli A NBP; jeden wiersz = dzień roboczy × waluta.
+    data_tests:
+      # generic z paczki: ziarno modelu (dzień × waluta) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - effective_date
+              - currency_code
+      # generic z paczki: kurs waluty jest zawsze dodatni
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "mid > 0"
+      # generic z paczki: NBP publikuje tabelę A tylko w dni robocze
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "extract(dayofweek from effective_date) not in (1, 7)"
+    columns:
+      - name: effective_date
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: currency_code
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: mid
+        data_tests:
+          # generic wbudowany
+          - not_null
