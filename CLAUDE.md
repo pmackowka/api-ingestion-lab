@@ -56,7 +56,7 @@ Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypom
   (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `docs/konfiguracja.md`.
 - `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji).
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
-- `.github/workflows/ci.yml` — `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP.
+- `.github/workflows/ci.yml` — job `tests`: `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP; job `dbt-unit-tests`: WIF jak w `pipeline.yml`, `dbt deps` + unit testy dbt (`--select "test_type:unit"`), bo wykonują się w BigQuery.
 
 ## Komendy
 
