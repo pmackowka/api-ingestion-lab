@@ -27,7 +27,7 @@ Stan na 2026-11-19: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 5396467
 Następny krok: etap 7 (dbt) — model lead-to-cash na `raw_*`. Ingest Odoo działa tylko lokalnie — poza `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 1:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
-ingesty jako `strategy.matrix` z `fail-fast: false`; w etapie 7 dojdzie job `dbt` z `needs: ingest`. Uzasadnienie wariantu
+ingesty jako `strategy.matrix` z `fail-fast: false`; job `dbt` (`needs: ingest`) robi `dbt build --target prod` i `dbt source freshness`. Uzasadnienie wariantu
 w `docs/orkiestracja.md` (matrix / osobny job na źródło / jeden job z krokami / osobny workflow na źródło / Airflow). Warunek matrix: każdy `<system>/ingest.py`
 ma wspólny interfejs CLI z `common/cli.py` (`--project`, `--start`/`--lookback-days`, `--end`, `--dataset`).
 
