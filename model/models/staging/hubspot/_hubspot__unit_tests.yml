@@ -1,0 +1,15 @@
+unit_tests:
+  # unit: flaga is_test_lead dla kontaktów bez źródła i z Tag Assistanta
+  - name: test_contacts_flags_test_leads
+    model: stg_hubspot__contacts
+    given:
+      - input: source('hubspot', 'contacts')
+        rows:
+          - {contact_id: "1", lead_source: google / organic}
+          - {contact_id: "2", lead_source: tagassistant.google.com / referral}
+          - {contact_id: "3", lead_source: null}
+    expect:
+      rows:
+        - {contact_id: "1", is_test_lead: false}
+        - {contact_id: "2", is_test_lead: true}
+        - {contact_id: "3", is_test_lead: true}
