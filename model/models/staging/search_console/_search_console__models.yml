@@ -1,0 +1,34 @@
+models:
+  - name: stg_search_console__search_daily
+    description: Wyniki dzienne całej usługi; jeden wiersz = dzień × kraj × urządzenie.
+    data_tests:
+      # generic z paczki: ziarno modelu (dzień × kraj × urządzenie) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - report_date
+              - country
+              - device
+      # generic z paczki: kliknięcie wymaga wyświetlenia
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "clicks <= impressions"
+      # generic z paczki: najwyższa pozycja w wynikach to 1
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "avg_position >= 1"
+    columns:
+      - name: report_date
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: country
+        data_tests:
+          # generic wbudowany
+          - not_null
+      - name: device
+        data_tests:
+          # generic wbudowany: urządzenia zwracane przez Search Console API
+          - accepted_values:
+              arguments:
+                values: ["MOBILE", "DESKTOP", "TABLET"]
