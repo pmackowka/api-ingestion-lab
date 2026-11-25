@@ -73,3 +73,40 @@ models:
               arguments:
                 to: ref('dim_source')
                 field: source_medium
+
+  - name: fct_leads
+    description: Leady z HubSpota z sumą deali, faktur i wpłat; jeden wiersz = kontakt, leady testowe oznaczone flagą.
+    data_tests:
+      # generic z paczki: złączenie z dealami nie gubi kontaktów
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_hubspot__contacts')
+      # generic z paczki: lead testowy odpada na kwalifikacji w CRM, więc nie ma deali; warn, bo to błąd w CRM, nie w pipeline
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not is_test_lead or deals = 0"
+          config:
+            severity: warn
+    columns:
+      - name: contact_id
+        data_tests:
+          # generic wbudowany: deale zsumowane po kontakcie, więc lead się nie dubluje
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: lead_date
+        data_tests:
+          # generic wbudowany: każdy dzień leada istnieje w wymiarze daty
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: source_medium
+        data_tests:
+          # generic wbudowany: źródło prawdziwego leada istnieje w wymiarze źródła; dim_source pomija źródła testowe
+          - relationships:
+              arguments:
+                to: ref('dim_source')
+                field: source_medium
+              config:
+                where: "not is_test_lead"
