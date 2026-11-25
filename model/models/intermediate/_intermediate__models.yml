@@ -1,0 +1,19 @@
+models:
+  - name: int_deal_revenue
+    description: Deal z fakturą z Odoo i sumą wpłat; jeden wiersz = deal.
+    data_tests:
+      # generic z paczki: złączenia z fakturą i wpłatami nie gubią deali
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_hubspot__deals')
+    columns:
+      - name: deal_id
+        data_tests:
+          # generic wbudowany: złączenia nie mnożą deala
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: is_won
+        data_tests:
+          # generic wbudowany: null w dealstage dałby null zamiast false i zaniżył won_deals w fct_leads
+          - not_null
