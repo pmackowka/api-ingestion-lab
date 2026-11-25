@@ -109,3 +109,6 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
    kilku zmian w jeden push.
 5. Przed commitem: grep staged diffu po `~/.config/git/forbidden-patterns.txt`; autor
    `git -c user.name=Piotr -c user.email=pmackowka@gmail.com`; bez stopek Claude'a.
+6. Komentarze do nauki: na prośbę Piotra dopisz w kodzie komentarz po polsku pod każdą linią (wyjaśnienie
+   dla dewelopera Pythona/SQL). To wyjątek od zakazu komentarzy, tylko do czytania w Cursorze: nigdy ich nie
+   commituj. Przed commitem innej zmiany w tym samym pliku usuń je (`git diff` bez linii z komentarzami).
