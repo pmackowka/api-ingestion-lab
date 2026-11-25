@@ -1,0 +1,23 @@
+models:
+  - name: dim_date
+    description: Wymiar daty; jeden wiersz = dzień od 2025-01-01 do dziś (Europe/Warsaw).
+    columns:
+      - name: date_day
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+          # generic z paczki: kolejne dni bez przerw
+          - dbt_utils.sequential_values:
+              arguments:
+                interval: 1
+                datepart: day
+      - name: iso_day_of_week
+        description: Dzień tygodnia według ISO 8601; 1 = poniedziałek, 7 = niedziela.
+        data_tests:
+          # generic wbudowany
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7]
+                quote: false
