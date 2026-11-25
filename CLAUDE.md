@@ -97,3 +97,15 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 - Dane syntetyczne trafiają do prawdziwych systemów (konto testowe HubSpot, lokalne Odoo), a nie do
   atrap — ingest zawsze rozmawia z prawdziwym API. Generator danych ma stały `seed` (powtarzalność).
 - Commity po angielsku, tryb rozkazujący, bezpośrednio na `main`.
+
+## Tryb pracy krok po kroku
+
+1. Jeden krok = jedna logiczna zmiana (model, jego testy, poprawka generatora). Proponuj tylko jeden następny krok.
+2. Zmianę zapisuj od razu w plikach i zostaw niezacommitowaną — Piotr przegląda ją w Cursorze jako „Modified”.
+   Kod commitowany przed przeglądem znika z widoku zmian w Cursorze.
+3. W terminalu podsumowanie: co i dlaczego, wynik `dbt build`/`pytest` i weryfikacja „na czerwono”
+   (na chwilę psujesz model albo kod, pokazujesz padający test, przywracasz). Bez wklejania kodu.
+4. „Dalej” = Piotr przejrzał zmianę. Najpierw commit + push tej jednej zmiany, potem następny krok. Nie zbieraj
+   kilku zmian w jeden push.
+5. Przed commitem: grep staged diffu po `~/.config/git/forbidden-patterns.txt`; autor
+   `git -c user.name=Piotr -c user.email=pmackowka@gmail.com`; bez stopek Claude'a.
