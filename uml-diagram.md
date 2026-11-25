@@ -53,6 +53,29 @@ classDiagram
         engaged_sessions
         contact_clicks
     }
+    class int_deal_revenue {
+        <<model pośredni dbt>>
+        deal_id PK
+        contact_id
+        is_won
+        amount
+        invoiced_amount_net
+        invoiced_amount_gross
+        paid_amount
+    }
+    class fct_leads {
+        <<fakt dbt>>
+        contact_id PK
+        lead_date FK
+        source_medium FK
+        is_test_lead
+        deals
+        won_deals
+        won_amount
+        invoiced_amount_net
+        invoiced_amount_gross
+        paid_amount
+    }
 
     class ga4["raw_ga4.traffic_daily, contact_events_daily"] {
         report_date
@@ -89,6 +112,12 @@ classDiagram
     dim_date "1" <-- "0..*" fct_traffic_daily : date_day
     dim_source "1" <-- "0..*" fct_traffic_daily : source_medium
     ga4 ..> fct_traffic_daily : dzień × source / medium
+
+    deals ..> int_deal_revenue : deal + faktura + suma wpłat
+    dim_date "1" <-- "0..*" fct_leads : lead_date
+    dim_source "1" <-- "0..*" fct_leads : source_medium
+    contacts ..> fct_leads : kontakt = lead
+    int_deal_revenue ..> fct_leads : suma po contact_id
 ```
 
 | Linia | Znaczenie |
@@ -113,10 +142,10 @@ sequenceDiagram
     participant D as dbt build
     box transparent Silver — dw_prod: widoki stg_*, int_*
         participant STG as dw_prod.stg_ga4__traffic_daily
-        participant INT as dw_prod.int_* (złączenia)
+        participant INT as dw_prod.int_deal_revenue (złączenia)
     end
     box transparent Gold — dw_prod: tabele dim_*, fct_*
-        participant M as dw_prod.dim_date, dw_prod.dim_source, dw_prod.fct_traffic_daily
+        participant M as dw_prod.dim_date, dw_prod.dim_source, dw_prod.fct_traffic_daily, dw_prod.fct_leads
     end
     actor A as Analityk / dashboard
 
@@ -128,7 +157,7 @@ sequenceDiagram
     Note over S: schowek tylko dla ingestu — dbt go nie czyta
     GH->>D: job dbt po ingeście (needs: ingest)
     D->>STG: widok na raw_ga4.traffic_daily: nazwy, typy, strefa czasowa
-    D->>INT: tabela ze złączeń modeli stg_*
+    D->>INT: widok ze złączeń modeli stg_*
     D->>M: tabele wymiarów i faktów z int_* i stg_*
     A->>M: SELECT … GROUP BY dzień, źródło
 ```
