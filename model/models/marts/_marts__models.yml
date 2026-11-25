@@ -44,3 +44,32 @@ models:
           - accepted_values:
               arguments:
                 values: ["Direct", "Paid Search", "Organic Search", "AI Assistant", "Owned", "Organic Social", "Referral", "Unassigned"]
+
+  - name: fct_traffic_daily
+    description: Ruch i kliknięcia w kontakt; jeden wiersz = dzień × source / medium.
+    data_tests:
+      # generic z paczki: ziarno modelu (dzień × source / medium) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - date_day
+              - source_medium
+      # generic z paczki: sesje zaangażowane to podzbiór wszystkich sesji
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "engaged_sessions <= sessions"
+    columns:
+      - name: date_day
+        data_tests:
+          # generic wbudowany: każdy dzień faktu istnieje w wymiarze daty
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: source_medium
+        data_tests:
+          # generic wbudowany: każde źródło faktu istnieje w wymiarze źródła
+          - relationships:
+              arguments:
+                to: ref('dim_source')
+                field: source_medium
