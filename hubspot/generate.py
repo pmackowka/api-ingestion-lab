@@ -18,6 +18,7 @@ SALES_CYCLE_DAYS = (7, 45)
 AMOUNT_RANGE = (20, 300)
 OPEN_STAGES = ["appointmentscheduled", "qualifiedtobuy", "presentationscheduled", "decisionmakerboughtin", "contractsent"]
 BATCH_SIZE = 100
+TEST_SOURCES = ("tagassistant.google.com",)
 
 FIRST_NAMES = ["Anna", "Piotr", "Katarzyna", "Tomasz", "Magdalena", "Michał", "Agnieszka", "Paweł", "Joanna", "Marcin"]
 LAST_NAMES = ["Nowak", "Kowalczyk", "Wiśniewska", "Wójcik", "Kamińska", "Lewandowski", "Zielińska", "Szymański"]
@@ -66,9 +67,11 @@ def build_leads(clicks: list[dict], seed: int = SEED, rate: float = LEAD_RATE) -
 
 
 def build_deals(leads: list[dict], today: date, seed: int = SEED) -> list[dict]:
-    """Leady -> deale: {"email": kontakt do powiązania, "properties": właściwości deala}."""
+    """Leady -> deale: {"email": kontakt do powiązania, "properties": właściwości deala}; leady testowe bez deali."""
     deals = []
     for lead in leads:
+        if lead["lead_source"].startswith(TEST_SOURCES):
+            continue
         rng = random.Random(f"{seed}:deal:{lead['email']}")
         has_deal = rng.random() < DEAL_RATE
         cycle_days = rng.randint(*SALES_CYCLE_DAYS)

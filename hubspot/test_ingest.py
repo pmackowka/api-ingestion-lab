@@ -87,6 +87,16 @@ def test_build_deals_stage_depends_only_on_date():
     assert len({d["properties"]["deal_key"] for d in late}) == len(late) > 0
 
 
+def test_build_deals_skips_test_sources():
+    real = build_leads([_click("2026-01-01", "google", 200)], rate=1.0)
+    test = build_leads([_click("2026-01-02", "tagassistant.google.com", 200)], rate=1.0)
+
+    deals = build_deals(real + test, today=date(2026, 12, 31))
+
+    assert deals == build_deals(real, today=date(2026, 12, 31))
+    assert len(deals) > 0
+
+
 def test_fetch_objects_follows_cursor_until_no_paging():
     contacts = [{"id": str(i), "properties": {}, "createdAt": "x", "updatedAt": "y"} for i in range(5)]
     session = _FakeSession(contacts)
