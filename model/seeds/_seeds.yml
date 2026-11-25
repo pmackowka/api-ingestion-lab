@@ -1,0 +1,10 @@
+seeds:
+  - name: source_aliases
+    description: Aliasy źródeł ruchu; jeden wiersz = oryginalna nazwa źródła i jej ujednolicona postać.
+    columns:
+      - name: source
+        data_tests:
+          # generic wbudowany: dwa aliasy jednej nazwy zdublowałyby wiersze w dim_source
+          - unique
+          # generic wbudowany
+          - not_null

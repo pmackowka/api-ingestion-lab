@@ -21,3 +21,26 @@ models:
               arguments:
                 values: [1, 2, 3, 4, 5, 6, 7]
                 quote: false
+
+  - name: dim_source
+    description: Wymiar źródła ruchu z kanałem; jeden wiersz = oryginalna para source / medium z GA4 i HubSpot.
+    data_tests:
+      # generic z paczki: nowe źródło bez kanału (poza znanym (not set)) czeka na regułę albo alias
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "channel != 'Unassigned' or source_medium = '(not set) / (not set)'"
+          config:
+            severity: warn
+    columns:
+      - name: source_medium
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: channel
+        data_tests:
+          # generic wbudowany: tylko kanały z instrukcji case w dim_source.sql
+          - accepted_values:
+              arguments:
+                values: ["Direct", "Paid Search", "Organic Search", "AI Assistant", "Owned", "Organic Social", "Referral", "Unassigned"]
