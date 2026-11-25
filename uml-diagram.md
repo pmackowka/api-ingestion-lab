@@ -1,6 +1,6 @@
 # Diagram klas UML: model danych i klucze łączące źródła
 
-Tabele `raw_*` i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), a GA4, Search Console, pogoda i NBP z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [README główne](README.md#klucze-łączące-źródła).
+Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), a GA4, Search Console, pogoda i NBP z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [README główne](README.md#klucze-łączące-źródła).
 
 ```mermaid
 classDiagram
@@ -38,10 +38,20 @@ classDiagram
     class dim_source {
         <<wymiar dbt>>
         source_medium PK
+        source_clean
+        channel
     }
     class dim_date {
         <<wymiar dbt>>
-        date PK
+        date_day PK
+    }
+    class fct_traffic_daily {
+        <<fakt dbt>>
+        date_day FK
+        source_medium FK
+        sessions
+        engaged_sessions
+        contact_clicks
     }
 
     class ga4["raw_ga4.traffic_daily, contact_events_daily"] {
@@ -75,6 +85,10 @@ classDiagram
     search_console ..> dim_date : report_date
     weather ..> dim_date : weather_date
     nbp ..> dim_date : effective_date
+
+    dim_date "1" <-- "0..*" fct_traffic_daily : date_day
+    dim_source "1" <-- "0..*" fct_traffic_daily : source_medium
+    ga4 ..> fct_traffic_daily : dzień × source / medium
 ```
 
 | Linia | Znaczenie |
