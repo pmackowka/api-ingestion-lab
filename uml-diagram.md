@@ -1,6 +1,6 @@
 # Diagram klas UML: model danych i klucze łączące źródła
 
-Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), a GA4, Search Console, pogoda i NBP z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [README główne](README.md#klucze-łączące-źródła).
+Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), a GA4, Search Console, pogoda i NBP z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [niżej](#klucze-łączące-źródła).
 
 ```mermaid
 classDiagram
@@ -44,6 +44,9 @@ classDiagram
     class dim_date {
         <<wymiar dbt>>
         date_day PK
+        is_weekend
+        is_rainy_day
+        temperature_band
     }
     class fct_traffic_daily {
         <<fakt dbt>>
@@ -106,7 +109,7 @@ classDiagram
     payments ..> dim_date : payment_date
     ga4 ..> dim_date : report_date
     search_console ..> dim_date : report_date
-    weather ..> dim_date : weather_date
+    weather ..> dim_date : średnia z 5 miast na dzień
     nbp ..> dim_date : effective_date
 
     dim_date "1" <-- "0..*" fct_traffic_daily : date_day
@@ -124,6 +127,16 @@ classDiagram
 |---|---|
 | ciągła, z krotnością | klucz rekordu: łączy konkretne wiersze |
 | przerywana | wspólny wymiar: łączy agregaty `data × źródło`, bez użytkowników |
+
+## Klucze łączące źródła
+
+GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik. Dlatego CRM i ERP łączą się kluczami rekordów, a GA4 z resztą — tylko wspólnymi wymiarami `data × źródło`.
+
+- Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
+- Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
+- Search Console nie ma wymiaru źródła — w całości to `google / organic`.
+- Pogoda i NBP łączą się tylko datą; NBP nie publikuje kursów w weekendy i święta, a tabela A nie zawiera PLN.
+- `invoices.partner_id` to klient w Odoo bez e-maila — z kontaktem łączy go `deal_key`, nie partner.
 
 # Diagram sekwencji UML: od API do raportu (bronze → silver → gold)
 

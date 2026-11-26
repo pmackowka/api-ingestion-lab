@@ -41,7 +41,7 @@ Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypom
 
 ## Struktura
 
-- `README.md` — indeks połączeń, wspólny przepływ zapisu (diagram, strategie ładowania), tabela wariantów automatyzacji.
+- `README.md` — indeks połączeń, warstwy danych (bronze/silver/gold → datasety i foldery dbt), wspólny przepływ zapisu (strategie ładowania).
   Zasada: to, co dotyczy wszystkich źródeł, idzie do głównego README; to, co specyficzne dla źródła — do README folderu.
 - `<system>/` — jeden folder na źródło, będący pakietem: `__init__.py`, `ingest.py`, `test_ingest.py`, `README.md`.
   Testy importują `from <system>.ingest import ...` — bez `__init__.py` dwa pliki `test_ingest.py`
@@ -54,7 +54,7 @@ Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypom
   (`python <system>/ingest.py` nie widzi pakietu `common`).
 - `.github/workflows/pipeline.yml` — codzienny ingest wszystkich źródeł; poświadczenia przez Workload Identity Federation
   (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `docs/konfiguracja.md`.
-- `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji).
+- `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji i platform do uruchamiania ingestu). `uml-diagram.md` w korzeniu — diagram klas z kluczami łączącymi źródła i diagram sekwencji.
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — job `tests`: `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP; job `dbt-unit-tests`: WIF jak w `pipeline.yml`, `dbt deps` + unit testy dbt (`--select "test_type:unit"`), bo wykonują się w BigQuery.
 

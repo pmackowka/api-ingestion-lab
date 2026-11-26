@@ -23,17 +23,18 @@ Każdy folder ma własny README z konfiguracją krok po kroku.
 - *syntetyczne (darmowe konto testowe)* — prawdziwe API HubSpot na [koncie testowym dewelopera](https://developers.hubspot.com/docs/getting-started/account-types); dane wgrywa nasz skrypt.
 - *syntetyczne (open source lokalnie)* — Odoo z fakturami wystawianymi przez nasz skrypt; SAP i polskie ERP nie mają darmowego środowiska z API, a Odoo daje te same typy danych i PostgreSQL do ćwiczenia CDC.
 
-## Klucze łączące źródła
+## Warstwy danych
 
-GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza — tylko kliknięcia w e-mail, telefon i LinkedIn. Syntetyczne leady dostają źródło według proporcji źródeł z GA4 w kliknięciach w kontakt, a ich liczba to kliknięcia × założony współczynnik. Dlatego CRM i ERP łączą się kluczami rekordów, a GA4 z resztą — tylko wspólnymi wymiarami `data × źródło`.
+Bronze ładują skrypty `<system>/ingest.py`; silver i gold buduje dbt w [`model/`](model/). Foldery `model/models/` to konwencja dbt, bronze/silver/gold to te same warstwy w nazewnictwie architektury medalionowej.
 
-Diagram klas UML z kluczami i krotnościami: [`uml-diagram.md`](uml-diagram.md).
+| Warstwa | Gdzie | Prefiks | Materializacja | Dataset | Co robi | Przykład |
+|---|---|---|---|---|---|---|
+| Bronze | `<system>/ingest.py`; w dbt jako `sources` w `model/models/staging/<system>/_<system>__sources.yml` | `raw_` | tabela (ingest) | `raw_nbp`, `raw_weather`, `raw_ga4`, `raw_search_console`, `raw_hubspot`, `raw_odoo` | kopia źródła 1:1, cała historia; schowek `_staging_*` tylko dla ingestu | `raw_odoo.invoices` |
+| Silver | `model/models/staging/` | `stg_` | widok | `dw_prod` (lokalnie `dw_dev`) | jeden model na tabelę `raw_*`: nazwy, typy, strefa czasowa, flagi; bez złączeń | `stg_hubspot__contacts` (`is_test_lead`) |
+| Silver | `model/models/intermediate/` | `int_` | widok | `dw_prod` (lokalnie `dw_dev`) | złączenia między źródłami i przeliczenia, których nie czyta raport | `int_deal_revenue` (deal → faktura → wpłaty) |
+| Gold | `model/models/marts/` | `dim_`, `fct_` | tabela | `dw_prod` (lokalnie `dw_dev`) | gwiazda Kimballa: wspólne wymiary i fakty dla raportów | `dim_date`, `fct_leads` |
 
-- Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
-- Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
-- Search Console nie ma wymiaru źródła — w całości to `google / organic`.
-- Pogoda i NBP łączą się tylko datą; NBP nie publikuje kursów w weekendy i święta, a tabela A nie zawiera PLN.
-- `invoices.partner_id` to klient w Odoo bez e-maila — z kontaktem łączy go `deal_key`, nie partner.
+Materializacje: [`model/dbt_project.yml`](model/dbt_project.yml). Klucze łączące źródła i diagram klas: [`uml-diagram.md`](uml-diagram.md).
 
 ## Jak dane trafiają do BigQuery
 
@@ -65,16 +66,3 @@ Dlaczego tutaj:
 4. Skala na to pozwala: największa tabela (NBP) ma ok. 8 tys. wierszy rocznie, uruchomienie trwa ok. 7 s.
 
 Ograniczenia: koszt rośnie z całą tabelą, nie z zakresem, a dwa równoległe uruchomienia nadpisałyby się nawzajem. Z billingiem: partycje miesięczne + `MERGE` albo nadpisanie partycji.
-
-## Automatyzacja: gdzie uruchamiać ingest
-
-Wdrożony jest wiersz 1: [`.github/workflows/pipeline.yml`](.github/workflows/pipeline.yml), konfiguracja w [docs/konfiguracja.md](docs/konfiguracja.md#github-actions); pozostałe są do porównania.
-
-| # | Rozwiązanie | Koszt | Uwierzytelnianie do BigQuery | Kiedy wybrać / ograniczenia |
-|:-:|---|---|---|---|
-| 1 | **GitHub Actions** (cron) | 0 zł: publiczne repo za darmo, prywatne w limicie GitHub Free | token OIDC → WIF → krótkotrwały token konta usługi, zero kluczy | małe joby, zespół na GitHubie. Cron bywa opóźniony; w publicznym repo wyłącza się po 60 dniach bez aktywności |
-| 2 | **Cloud Run job + Cloud Scheduler** | billing; 180 000 vCPU-s miesięcznie i 3 harmonogramy gratis | konto usługi przypięte do joba | standard GCP dla joba wsadowego; brak zależności między jobami |
-| 3 | **AWS: ECS Fargate + EventBridge Scheduler** | konto AWS, płacisz za czas zadania | rola IAM → WIF z dostawcą AWS | organizacja na AWS; Lambda tylko do 15 min |
-| 4 | **Azure: Container Apps job** | subskrypcja Azure, płacisz za czas | managed identity → WIF z Entra ID | organizacja na Azure; wbudowane ponowienia |
-| 5 | **Databricks: Lakeflow Jobs** | workspace Databricks | WIF (dostawca AWS albo Entra ID) | lakehouse na Databricks — tam hurtownią zwykle jest sam Databricks |
-| 6 | **Airflow: Cloud Composer** | billing, środowisko płatne także bez uruchomień | konto usługi środowiska | wiele zależnych kroków, backfill zakresu dat, stan całego potoku. Dla kilku skryptów przerost |
