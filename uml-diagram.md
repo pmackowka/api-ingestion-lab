@@ -1,6 +1,6 @@
 # Diagram klas UML: model danych i klucze łączące źródła
 
-Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), NBP z fakturami — walutą i datą (kurs z ostatniego dnia notowań przed fakturą), a GA4, Search Console i pogoda z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [niżej](#klucze-łączące-źródła).
+Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), NBP z fakturami — walutą i datą (kurs z ostatniego dnia notowań przed fakturą), a GA4, Search Console, pogoda i święta z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [niżej](#klucze-łączące-źródła).
 
 ```mermaid
 classDiagram
@@ -45,6 +45,7 @@ classDiagram
         <<wymiar dbt>>
         date_day PK
         is_weekend
+        is_holiday
         is_rainy_day
         temperature_band
     }
@@ -101,6 +102,10 @@ classDiagram
         weather_date
         location_id
     }
+    class holidays["raw_holidays.public_holidays"] {
+        holiday_date
+        is_national
+    }
     class nbp["raw_nbp.exchange_rates_a"] {
         effective_date
         currency_code
@@ -119,6 +124,7 @@ classDiagram
     ga4 ..> dim_date : report_date
     search_console ..> dim_date : report_date
     weather ..> dim_date : średnia z 5 miast na dzień
+    holidays ..> dim_date : holiday_date → is_holiday
     nbp ..> dim_date : effective_date
 
     dim_date "1" <-- "0..*" fct_traffic_daily : date_day
@@ -147,7 +153,7 @@ GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza 
 - Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
 - Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
 - Search Console nie ma wymiaru źródła — w całości to `google / organic`.
-- Pogoda łączy się tylko datą. NBP łączy się z fakturą walutą i datą: kurs z ostatniego dnia notowań przed `invoice_date` (art. 31a ustawy o VAT), bo NBP nie publikuje kursów w weekendy i święta; tabela A nie zawiera PLN, więc PLN ma kurs 1.
+- Pogoda i święta łączą się tylko datą; święta są ogólnopolskie, więc nie potrzebują wymiaru regionu. NBP łączy się z fakturą walutą i datą: kurs z ostatniego dnia notowań przed `invoice_date` (art. 31a ustawy o VAT), bo NBP nie publikuje kursów w weekendy i święta; tabela A nie zawiera PLN, więc PLN ma kurs 1.
 - `invoices.partner_id` to klient w Odoo bez e-maila — z kontaktem łączy go `deal_key`, nie partner.
 
 # Diagram sekwencji UML: od API do raportu (bronze → silver → gold)
