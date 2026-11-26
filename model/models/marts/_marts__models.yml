@@ -21,6 +21,11 @@ models:
               arguments:
                 values: [1, 2, 3, 4, 5, 6, 7]
                 quote: false
+      - name: is_holiday
+        description: Święto państwowe w Polsce (Nager.Date); false także dla dni przed pierwszym załadowanym rokiem.
+        data_tests:
+          # generic wbudowany: left join ze świętami daje false, nie null — null oznaczałby błąd w warunku
+          - not_null
       - name: is_rainy_day
         description: Deszcz (co najmniej 1 mm) w co najmniej 3 z 5 miast.
       - name: temperature_band
