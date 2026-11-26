@@ -140,7 +140,7 @@ GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza 
 
 # Diagram sekwencji UML: od API do raportu (bronze → silver → gold)
 
-Kolejność w jednym nocnym przebiegu na przykładzie ruchu z GA4. Kroki 1–5 działają (`ga4/ingest.py`); kroki 6–11 to etap 7 (dbt), w budowie.
+Kolejność w jednym nocnym przebiegu na przykładzie ruchu z GA4. Kroki 1–5 działają (`ga4/ingest.py`); kroki 6–10 to etap 7 (dbt), w budowie.
 
 ```mermaid
 sequenceDiagram
@@ -172,15 +172,16 @@ sequenceDiagram
     D->>STG: widok na raw_ga4.traffic_daily: nazwy, typy, strefa czasowa
     D->>INT: widok ze złączeń modeli stg_*
     D->>M: tabele wymiarów i faktów z int_* i stg_*
+    Note over D,M: testy danych po każdym modelu; błąd testu → modele niżej SKIP, zostaje poprzednia wersja tabeli
     A->>M: SELECT … GROUP BY dzień, źródło
 ```
 
 | Krok | Po co |
 |---|---|
 | 4–5 | bronze: kopia źródła 1:1, cała historia; schowek `_staging_*` służy tylko do podmiany zakresu |
-| 8 | silver: jeden model `stg_*` na jedną tabelę `raw_*`, bez złączeń i agregacji; wszystkie modele dbt w jednym datasecie `dw_prod` (lokalnie `dw_dev`), warstwę wskazuje prefiks |
-| 9 | silver: złączenia między źródłami, np. faktura → deal → kontakt |
-| 10 | gold: gwiazda Kimballa — wymiary wspólne dla wszystkich faktów |
-| 11 | raporty czytają tylko gold, nigdy `raw_*` |
+| 7 | silver: jeden model `stg_*` na jedną tabelę `raw_*`, bez złączeń i agregacji; wszystkie modele dbt w jednym datasecie `dw_prod` (lokalnie `dw_dev`), warstwę wskazuje prefiks |
+| 8 | silver: złączenia między źródłami, np. faktura → deal → kontakt |
+| 9 | gold: gwiazda Kimballa — wymiary wspólne dla wszystkich faktów |
+| 10 | raporty czytają tylko gold, nigdy `raw_*` |
 
 Kiedy powstaje dziura: `--lookback-days 7` pobiera ostatnie 7 dni od dziś, więc przerwa w harmonogramie dłuższa niż 7 dni zostawia w `raw_*` dni bez danych — trzeba wtedy uruchomić ingest ręcznie z `--start`. dbt tej dziury nie załata: modele czytają tylko to, co jest w `raw_*`.
