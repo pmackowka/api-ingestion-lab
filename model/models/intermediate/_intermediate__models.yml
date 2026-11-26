@@ -17,3 +17,28 @@ models:
         data_tests:
           # generic wbudowany: null w dealstage dałby null zamiast false i zaniżył won_deals w fct_leads
           - not_null
+
+  - name: int_invoices_converted_to_pln
+    description: Faktury z Odoo z kwotami w PLN po kursie średnim NBP z ostatniego dnia notowań przed datą faktury (art. 31a ustawy o VAT); jeden wiersz = faktura.
+    data_tests:
+      # generic z paczki: złączenie z kursami nie gubi ani nie mnoży faktur
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_odoo__invoices')
+    columns:
+      - name: invoice_id
+        data_tests:
+          # generic wbudowany
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: exchange_rate
+        data_tests:
+          # generic wbudowany: brak kursu dla waluty obcej dałby null w kwotach PLN
+          - not_null
+      - name: exchange_rate_date
+        data_tests:
+          # generic wbudowany: waluta obca ma datę kursu z tabeli A NBP
+          - not_null:
+              config:
+                where: "currency != 'PLN'"

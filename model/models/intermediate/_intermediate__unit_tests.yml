@@ -23,3 +23,24 @@ unit_tests:
         - {deal_id: "1", is_won: true, invoice_id: 10, invoiced_amount_net: 1000, invoiced_amount_gross: 1230, paid_amount: 1230}
         - {deal_id: "2", is_won: true, invoice_id: null, invoiced_amount_net: null, invoiced_amount_gross: null, paid_amount: 0}
         - {deal_id: "3", is_won: false, invoice_id: null, invoiced_amount_net: null, invoiced_amount_gross: null, paid_amount: 0}
+
+  # unit: kurs z ostatniego dnia notowań przed fakturą, nie z dnia faktury, z tej samej waluty; PLN po kursie 1
+  - name: test_invoices_converted_to_pln_uses_last_rate_before_invoice
+    model: int_invoices_converted_to_pln
+    given:
+      - input: ref('stg_odoo__invoices')
+        rows:
+          - {invoice_id: 1, currency: PLN, invoice_date: 2026-09-20, amount_untaxed: 100, amount_tax: 23}
+          - {invoice_id: 2, currency: EUR, invoice_date: 2026-09-20, amount_untaxed: 100, amount_tax: 23}
+          - {invoice_id: 3, currency: EUR, invoice_date: 2026-09-21, amount_untaxed: 10.01, amount_tax: 2.30}
+      - input: ref('stg_nbp__exchange_rates_a')
+        rows:
+          - {currency_code: EUR, effective_date: 2026-09-17, mid: 4.0}
+          - {currency_code: EUR, effective_date: 2026-09-18, mid: 4.5}
+          - {currency_code: EUR, effective_date: 2026-09-21, mid: 5.0}
+          - {currency_code: USD, effective_date: 2026-09-19, mid: 9.9}
+    expect:
+      rows:
+        - {invoice_id: 1, exchange_rate: 1, exchange_rate_date: null, amount_untaxed_pln: 100, amount_tax_pln: 23, amount_total_pln: 123}
+        - {invoice_id: 2, exchange_rate: 4.5, exchange_rate_date: 2026-09-18, amount_untaxed_pln: 450, amount_tax_pln: 103.5, amount_total_pln: 553.5}
+        - {invoice_id: 3, exchange_rate: 4.5, exchange_rate_date: 2026-09-18, amount_untaxed_pln: 45.05, amount_tax_pln: 10.35, amount_total_pln: 55.4}
