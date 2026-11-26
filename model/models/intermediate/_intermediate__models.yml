@@ -1,6 +1,6 @@
 models:
   - name: int_deal_revenue
-    description: Deal z fakturą z Odoo i sumą wpłat; jeden wiersz = deal.
+    description: Deal z fakturą z Odoo i sumą wpłat; kwoty w PLN, wpłaty po kursie faktury; jeden wiersz = deal.
     data_tests:
       # generic z paczki: złączenia z fakturą i wpłatami nie gubią deali
       - dbt_utils.equal_rowcount:

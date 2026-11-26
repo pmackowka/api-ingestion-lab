@@ -1,5 +1,5 @@
 unit_tests:
-  # unit: wpłaty sumowane na fakturę, liczą się tylko zaksięgowane faktury i nieanulowane wpłaty
+  # unit: wpłaty sumowane na fakturę i przeliczane kursem faktury; liczą się tylko zaksięgowane faktury i nieanulowane wpłaty
   - name: test_deal_revenue_sums_valid_payments
     model: int_deal_revenue
     given:
@@ -8,10 +8,10 @@ unit_tests:
           - {deal_id: "1", deal_key: deal-a, dealstage: closedwon}
           - {deal_id: "2", deal_key: deal-b, dealstage: closedwon}
           - {deal_id: "3", deal_key: deal-c, dealstage: closedlost}
-      - input: ref('stg_odoo__invoices')
+      - input: ref('int_invoices_converted_to_pln')
         rows:
-          - {invoice_id: 10, deal_key: deal-a, state: posted, amount_untaxed: 1000, amount_total: 1230}
-          - {invoice_id: 20, deal_key: deal-b, state: cancel, amount_untaxed: 2000, amount_total: 2460}
+          - {invoice_id: 10, deal_key: deal-a, state: posted, exchange_rate: 4.5, amount_untaxed_pln: 4500, amount_total_pln: 5535}
+          - {invoice_id: 20, deal_key: deal-b, state: cancel, exchange_rate: 1, amount_untaxed_pln: 2000, amount_total_pln: 2460}
       - input: ref('stg_odoo__payments')
         rows:
           - {invoice_id: 10, state: reconciled, amount: 1000}
@@ -20,7 +20,7 @@ unit_tests:
           - {invoice_id: 20, state: reconciled, amount: 2460}
     expect:
       rows:
-        - {deal_id: "1", is_won: true, invoice_id: 10, invoiced_amount_net: 1000, invoiced_amount_gross: 1230, paid_amount: 1230}
+        - {deal_id: "1", is_won: true, invoice_id: 10, invoiced_amount_net: 4500, invoiced_amount_gross: 5535, paid_amount: 5535}
         - {deal_id: "2", is_won: true, invoice_id: null, invoiced_amount_net: null, invoiced_amount_gross: null, paid_amount: 0}
         - {deal_id: "3", is_won: false, invoice_id: null, invoiced_amount_net: null, invoiced_amount_gross: null, paid_amount: 0}
 
