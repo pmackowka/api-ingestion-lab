@@ -96,7 +96,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 - Nowy etap = nowy folder + README folderu + aktualizacja wiersza w tabeli „Połączenia”.
 - Dane syntetyczne trafiają do prawdziwych systemów (konto testowe HubSpot, lokalne Odoo), a nie do
   atrap — ingest zawsze rozmawia z prawdziwym API. Generator danych ma stały `seed` (powtarzalność).
-- Commity po polsku (od 2026-11-26; wcześniejsza historia jest po angielsku), tryb rozkazujący, bezpośrednio na `main`.
+- Commity: prefiks Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:`, `chore:`, `perf:`, `revert:`) + opis po polsku w trybie rozkazującym, ≤ 72 znaki (od 2026-11-26; wcześniejsza historia jest po angielsku), bezpośrednio na `main`.
 
 ## Tryb pracy krok po kroku
 
