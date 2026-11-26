@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from odoo.generate import build_invoice, payment_date
+from odoo.generate import build_invoice, invoice_currency, payment_date
 from odoo.ingest import fetch_records, payments_to_rows, to_rows
 
 LOADED_AT = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
@@ -36,6 +36,26 @@ def test_build_invoice_uses_deal_key_date_and_net_amount():
     assert (vals["ref"], vals["invoice_date"], vals["partner_id"]) == ("deal-20260603-001", "2026-06-10", 12)
     [[command, _, line]] = vals["invoice_line_ids"]
     assert command == 0 and line["price_unit"] == 10000.0 and line["tax_ids"] == [[6, 0, [8]]]
+
+
+def test_build_invoice_in_eur_converts_net_amount_with_nbp_rate():
+    deal = {"deal_key": "deal-20260811-001", "amount": Decimal("9600"), "close_date": date(2026, 9, 18),
+            "eur_mid": Decimal("4.3632")}
+
+    vals = build_invoice(deal, partner_id=12, tax_id=8, eur_id=1)
+
+    [[_, _, line]] = vals["invoice_line_ids"]
+    assert vals["currency_id"] == 1 and line["price_unit"] == 2200.22
+
+
+def test_invoice_currency_is_stable_and_needs_rate():
+    deals = [{"deal_key": f"deal-20260101-{n:03d}", "eur_mid": Decimal("4.3")} for n in range(1, 1001)]
+
+    eur = [d["deal_key"] for d in deals if invoice_currency(d) == "EUR"]
+
+    assert 250 < len(eur) < 350
+    assert eur == [d["deal_key"] for d in deals if invoice_currency(d) == "EUR"]
+    assert invoice_currency({"deal_key": eur[0], "eur_mid": None}) == "PLN"
 
 
 def test_fetch_records_stops_on_short_page():
