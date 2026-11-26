@@ -35,6 +35,8 @@ jobs:
             args: '--site sc-domain:pmdata.pl'
           - source: hubspot
             args: ''
+          - source: holidays
+            args: ''
     name: ingest (${{ matrix.source }})
     steps:
       - uses: actions/checkout@v7
