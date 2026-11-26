@@ -21,6 +21,19 @@ models:
               arguments:
                 values: [1, 2, 3, 4, 5, 6, 7]
                 quote: false
+      - name: is_rainy_day
+        description: Deszcz (co najmniej 1 mm) w co najmniej 3 z 5 miast.
+      - name: temperature_band
+        description: Przedział średniej temperatury z 5 miast; null dla dni bez pogody.
+        data_tests:
+          # generic wbudowany: przedziały z case w dim_date.sql
+          - accepted_values:
+              arguments:
+                values: ["freezing", "cold", "warm", "hot"]
+          # generic wbudowany: pogoda bez dziur w historii; ostatnie 7 dni pomija, bo ingest je przelicza, a opóźnienie łapie dbt source freshness
+          - not_null:
+              config:
+                where: "date_day < date_sub(current_date('Europe/Warsaw'), interval 7 day)"
 
   - name: dim_source
     description: Wymiar źródła ruchu z kanałem; jeden wiersz = oryginalna para source / medium z GA4 i HubSpot.
