@@ -1,0 +1,21 @@
+models:
+  - name: stg_holidays__public_holidays
+    description: Święta państwowe w Polsce (nazwy angielskie z API v4); jeden wiersz = dzień świąteczny.
+    data_tests:
+      # generic z paczki: is_holiday w dim_date zakłada święta ogólnopolskie; regionalne wymagałyby wymiaru regionu
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "is_national"
+    columns:
+      - name: holiday_date
+        data_tests:
+          # generic wbudowany: dwa święta jednego dnia zdublowałyby dni w dim_date
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: country_code
+        data_tests:
+          # generic wbudowany: ingest pobiera tylko Polskę
+          - accepted_values:
+              arguments:
+                values: ["PL"]
