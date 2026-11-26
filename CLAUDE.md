@@ -23,8 +23,9 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 ## Plan i stan
 
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
-Stan na 2026-11-19: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`), 5 (`hubspot/`, konto testowe HubSpot: kontakty i deale) i 6 (`odoo/`, Odoo 20 lokalnie w Dockerze: faktury i płatności) działają; etap 7 jest planowany.
-Następny krok: etap 7 (dbt) — model lead-to-cash na `raw_*`. Ingest Odoo działa tylko lokalnie — poza `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
+Stan na 2026-11-26: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`), 5 (`hubspot/`, konto testowe HubSpot: kontakty i deale), 6 (`odoo/`, Odoo 20 lokalnie w Dockerze: faktury i płatności) i 7 (`model/`, dbt: staging → intermediate → marty) działają.
+Etap 7 ma `fct_leads` i `fct_traffic_daily` na wspólnych `dim_date` (z pogodą) i `dim_source`; faktury w EUR przelicza na PLN `int_invoices_converted_to_pln` (kurs NBP z ostatniego dnia notowań przed fakturą).
+Następny krok: `model/README.md` (brak README folderu wbrew konwencji). Ingest Odoo działa tylko lokalnie — poza `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 1:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
 ingesty jako `strategy.matrix` z `fail-fast: false`; job `dbt` (`needs: ingest`) robi `dbt build --target prod` i `dbt source freshness`. Uzasadnienie wariantu
