@@ -101,7 +101,9 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 ## Tryb pracy krok po kroku
 
-1. Jeden krok = jedna logiczna zmiana (model, jego testy, poprawka generatora). Proponuj tylko jeden następny krok.
+1. Jeden krok = jeden plik (od 2026-11-26), w kolejności zależności: source YAML → model SQL → YAML z testami → test singular.
+   Każdy plik osobno: zapis, `dbt build`/`pytest`, przegląd, commit. Wyjątek: zmiana, która nie działa bez drugiego pliku
+   (np. kolumna w modelu i jej opis w dokumentacji) — wtedy nazwij oba pliki w podsumowaniu. Proponuj tylko jeden następny krok.
 2. Zmianę zapisuj od razu w plikach i zostaw niezacommitowaną — Piotr przegląda ją w Cursorze jako „Modified”.
    Kod commitowany przed przeglądem znika z widoku zmian w Cursorze.
 3. W terminalu podsumowanie: co i dlaczego, wynik `dbt build`/`pytest` i weryfikacja „na czerwono”
