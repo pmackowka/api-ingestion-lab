@@ -1,0 +1,12 @@
+sources:
+  - name: holidays
+    description: Święta państwowe w Polsce z Nager.Date, ładowane przez holidays/ingest.py.
+    schema: raw_holidays
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: hour}
+        error_after: {count: 54, period: hour}
+    tables:
+      - name: public_holidays
+        description: Święta; jeden wiersz = dzień świąteczny.
