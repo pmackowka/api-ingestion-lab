@@ -1,15 +1,15 @@
 # Orkiestracja w GitHub Actions — porównanie wariantów
 
-Dotyczy [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml): jak ułożyć codzienny ingest kilku niezależnych źródeł (NBP, pogoda, GA4, Search Console, HubSpot), a potem transformację w dbt, która potrzebuje ich wszystkich. Gdzie w ogóle uruchamiać ingest (GitHub Actions, Cloud Run, Airflow…) — [ostatnia sekcja](#gdzie-uruchamiać-ingest).
+Dotyczy [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml): jak ułożyć codzienny ingest kilku niezależnych źródeł (NBP, pogoda, GA4, Search Console, HubSpot, święta, sitemapa), a potem transformację w dbt, która potrzebuje ich wszystkich. Gdzie w ogóle uruchamiać ingest (GitHub Actions, Cloud Run, Airflow…) — [ostatnia sekcja](#gdzie-uruchamiać-ingest).
 
 ## Warianty
 
 | Wariant | Jak wygląda | Awaria jednego źródła | Ponowienie jednego źródła | Krok po wszystkich (dbt) | Nowe źródło |
 |---|---|---|---|---|---|
 | **1. Macierz** (`strategy.matrix`) — wybrany | jeden job `ingest`, GitHub tworzy z niego kopię na każde źródło | pozostałe lecą dalej (przy `fail-fast: false`) | „Re-run failed jobs” powtarza tylko nieudane | `needs: ingest` czeka na całą macierz | jeden wpis w `matrix.include` |
-| 2. Osobny job na źródło | sześć prawie identycznych jobów w jednym pliku | pozostałe lecą dalej | jak wyżej | `needs: [nbp, weather, ga4, search_console, hubspot, holidays]` | kopiowanie ~20 linii YAML |
+| 2. Osobny job na źródło | siedem prawie identycznych jobów w jednym pliku | pozostałe lecą dalej | jak wyżej | `needs: [nbp, weather, ga4, search_console, hubspot, holidays, sitemap]` | kopiowanie ~20 linii YAML |
 | 3. Jeden job z krokami | jeden runner, ingesty po kolei jako kroki | kolejne kroki się nie wykonają (chyba że `continue-on-error`) | tylko cały job | kolejny krok w tym samym jobie | jeden krok |
-| 4. Osobny workflow na źródło | sześć plików, każdy z własnym cronem | niezależne | per workflow | trudne: `workflow_run` reaguje na **jeden** z wymienionych workflowów, nie czeka na wszystkie | nowy plik |
+| 4. Osobny workflow na źródło | siedem plików, każdy z własnym cronem | niezależne | per workflow | trudne: `workflow_run` reaguje na **jeden** z wymienionych workflowów, nie czeka na wszystkie | nowy plik |
 | 5. Airflow (Cloud Composer) | DAG: zadania ingestu → `dbt build` | stan `upstream_failed` w zależnych | „Clear” zadania i zależnych | natywnie (zależności w DAG-u) | nowe zadanie w DAG-u |
 
 ## Dlaczego macierz
@@ -18,9 +18,9 @@ Dotyczy [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml): j
 - **Izolacja awarii bez dodatkowej logiki.** Timeout API NBP nie zatrzymuje GA4. Domyślnie `fail-fast` jest `true` i anulowałby pozostałe źródła, stąd jawne `false`. W wariancie 3 trzeba by to obchodzić `continue-on-error` na każdym kroku.
 - **Ponowienie tylko tego, co padło.** Każde źródło to osobny job, więc `gh run rerun <id> --failed` powtarza jedno źródło; zapis z podmianą zakresu jest idempotentny, więc powtórka jest bezpieczna.
 - **Bramka przed dbt.** Job `dbt` ma `needs: ingest`. Gdy którekolwiek źródło padnie, dbt zostaje pominięty — model nie liczy się na niepełnych danych. To świadomy wybór: lepiej brak świeżego raportu niż raport z dziurą po jednym źródle.
-- **Dlaczego nie Airflow:** daje stan per zadanie, datę logiczną przebiegu i backfill jednym poleceniem, ale wymaga billingu i stale działającego środowiska. Przy sześciu skryptach i jednym kroku dbt to przerost; `needs:` + „Re-run failed jobs” wystarczają. Kiedy Airflow się opłaca: wiersz 6 tabeli w sekcji [„Gdzie uruchamiać ingest”](#gdzie-uruchamiać-ingest).
+- **Dlaczego nie Airflow:** daje stan per zadanie, datę logiczną przebiegu i backfill jednym poleceniem, ale wymaga billingu i stale działającego środowiska. Przy siedmiu skryptach i jednym kroku dbt to przerost; `needs:` + „Re-run failed jobs” wystarczają. Kiedy Airflow się opłaca: wiersz 6 tabeli w sekcji [„Gdzie uruchamiać ingest”](#gdzie-uruchamiać-ingest).
 
-Koszt macierzy: każdy job osobno instaluje uv i zależności (z cache) i w prywatnym repo jest rozliczany osobno, zaokrąglany w górę do pełnej minuty. Sześć jobów po kilkadziesiąt sekund = ok. 6 minut dziennie zamiast 1–2 w wariancie 3. Przy tej skali bez znaczenia.
+Koszt macierzy: każdy job osobno instaluje uv i zależności (z cache) i w prywatnym repo jest rozliczany osobno, zaokrąglany w górę do pełnej minuty. Siedem jobów po kilkadziesiąt sekund = ok. 7 minut dziennie zamiast 1–2 w wariancie 3. Przy tej skali bez znaczenia.
 
 ## Elementy workflowu i ich powód
 
