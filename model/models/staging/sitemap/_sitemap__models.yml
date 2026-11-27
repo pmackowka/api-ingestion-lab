@@ -1,0 +1,27 @@
+models:
+  - name: stg_sitemap__pages
+    description: Strony pmdata.pl z sitemapy, daty w strefie Europe/Warsaw; jeden wiersz = adres.
+    data_tests:
+      # generic z paczki: złączenie z Search Console zakłada kanoniczny adres https z domeną
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "starts_with(page, 'https://pmdata.pl/')"
+      # generic z paczki: zmiana artykułu nie może być wcześniejsza niż publikacja
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "modified_date >= published_date"
+          config:
+            where: "modified_date is not null"
+    columns:
+      - name: page
+        data_tests:
+          # generic wbudowany: adres powtórzony w sitemapie zdublowałby wiersze po złączeniu z Search Console
+          - unique
+          # generic wbudowany
+          - not_null
+      - name: headline
+        data_tests:
+          # generic wbudowany: JSON-LD artykułu bez tytułu oznacza zmianę szablonu strony
+          - not_null:
+              config:
+                where: "is_article"
