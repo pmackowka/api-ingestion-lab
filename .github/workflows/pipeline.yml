@@ -37,6 +37,8 @@ jobs:
             args: ''
           - source: holidays
             args: ''
+          - source: sitemap
+            args: ''
     name: ingest (${{ matrix.source }})
     steps:
       - uses: actions/checkout@v7
