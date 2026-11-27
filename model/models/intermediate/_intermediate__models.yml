@@ -42,3 +42,28 @@ models:
           - not_null:
               config:
                 where: "currency != 'PLN'"
+
+  - name: int_search_pages_with_articles
+    description: Wyniki dzienne podstron z Search Console ze stroną z sitemapy po adresie kanonicznym (https, bez www, /blog/ → /artykuly/, końcowy /); jeden wiersz = dzień × strona.
+    data_tests:
+      # generic z paczki: złączenie z sitemapą nie gubi ani nie mnoży wierszy Search Console
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_search_console__search_pages_daily')
+      # generic z paczki: ziarno modelu (dzień × strona) bez duplikatów
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - report_date
+              - page
+      # generic z paczki: Google nie pokazuje artykułu przed publikacją; ujemna liczba dni oznacza złą datę w JSON-LD
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "days_since_published >= 0"
+          config:
+            where: "is_article"
+    columns:
+      - name: canonical_page
+        data_tests:
+          # generic wbudowany
+          - not_null
