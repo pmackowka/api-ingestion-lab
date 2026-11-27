@@ -40,22 +40,22 @@ Materializacje: [`model/dbt_project.yml`](model/dbt_project.yml). Klucze łącz�
 
 ## Jak dane trafiają do BigQuery
 
-Pobranie i spłaszczenie są w `<system>/ingest.py`, zapis (staging + podmiana zakresu) we wspólnej funkcji `replace_date_range` w [`common/bigquery.py`](common/bigquery.py), interfejs CLI w [`common/cli.py`](common/cli.py).
+Pobranie i spłaszczenie są w `<system>/ingest.py`, zapis we wspólnych funkcjach `replace_date_range` (staging + podmiana zakresu) i `replace_table` (pełne przeładowanie) w [`common/bigquery.py`](common/bigquery.py), interfejs CLI w [`common/cli.py`](common/cli.py).
 
 Przykład jednego uruchomienia krok po kroku (NBP): [`nbp/README.md`](nbp/README.md#jedno-uruchomienie-krok-po-kroku).
 
 ### Strategie ładowania
 
-Strategia mówi, co zrobić z wierszami już obecnymi w tabeli. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan, bez duplikatów. Kolumna „Sandbox” — sprawdzone na żywo, listopad 2026.
+Strategia mówi, co zrobić z wierszami już obecnymi w tabeli. Musi być **idempotentna**: ponowne uruchomienie dla tego samego zakresu daje ten sam stan, bez duplikatów. Kolumna „Sandbox BigQuery (60 dni)” — czy strategia działa w [sandboxie](https://docs.cloud.google.com/bigquery/docs/sandbox), czyli projekcie bez billingu: tabele i partycje wygasają po 60 dniach, DML niedostępny. Sprawdzone na żywo, listopad 2026.
 
-| Strategia | Mechanizm w BigQuery | Idempotentna | Koszt uruchomienia | Sandbox | Kiedy |
-|---|---|---|---|---|---|
-| Pełne przeładowanie | load całej historii, `WRITE_TRUNCATE` | tak | całe źródło | działa | małe tabele, słowniki, źródło usuwa rekordy |
-| Append | load, `WRITE_APPEND` | **nie** | nowe dane | działa | niezmienne zdarzenia + deduplikacja niżej (`QUALIFY ROW_NUMBER()` w dbt) |
-| Przepisanie z podmianą zakresu (**ten pipeline**) | `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | cała tabela | działa | małe tabele bez dostępu do DML |
-| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz |
-| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` | tak | skan celu albo partycji | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: CRM, CDC |
-| `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami |
+| Strategia | Mechanizm w BigQuery | Idempotentna | Koszt uruchomienia | Sandbox BigQuery (60 dni) | Kiedy | Gdzie w tym repo |
+|---|---|---|---|---|---|---|
+| Pełne przeładowanie | load całej historii, `WRITE_TRUNCATE` | tak | całe źródło | działa | małe tabele, słowniki, źródło usuwa rekordy | `hubspot/`, `odoo/`, `sitemap/` (`replace_table`); marty dbt (`materialized: table`) |
+| Append | load, `WRITE_APPEND` | **nie** | nowe dane | działa | niezmienne zdarzenia + deduplikacja niżej (`QUALIFY ROW_NUMBER()` w dbt) | — |
+| Przepisanie z podmianą zakresu | `SELECT` spoza zakresu `UNION ALL` staging, `WRITE_TRUNCATE_DATA` | tak | cała tabela | działa | małe tabele bez dostępu do DML | `nbp/`, `weather/`, `ga4/`, `search_console/`, `holidays/` (`replace_date_range`) |
+| Nadpisanie partycji | job do `tabela$YYYYMMDD`, `WRITE_TRUNCATE`; dbt: `insert_overwrite` | tak | nadpisane partycje | działa, z pułapką (niżej) | dane dzienne poprawiane wstecz | — |
+| `MERGE` | staging + `MERGE` po kluczu; dbt: `merge` + `unique_key` | tak | skan celu albo partycji | **nie** (403) | rekordy z kluczem zmieniane w dowolnym miejscu historii: CRM, CDC | — |
+| `DELETE` + `INSERT` w transakcji | `BEGIN TRANSACTION … COMMIT TRANSACTION` | tak | zakres + zapis | **nie** (DML) | podmiana zakresu niezgodnego z partycjami | — |
 
 #### Przepisanie z podmianą zakresu — na czym polega i dlaczego tutaj
 
