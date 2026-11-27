@@ -1,6 +1,6 @@
 # api-ingestion-lab
 
-Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze. Kierunek: ruch i wyszukiwanie (GA4, Search Console) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda, święta).
+Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze. Kierunek: ruch i wyszukiwanie (GA4, Search Console z artykułami z sitemapy) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda, święta).
 
 ## Połączenia
 
@@ -14,9 +14,9 @@ Każdy folder ma własny README z konfiguracją krok po kroku.
 | 4<br>*działa* | [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) — wyniki wyszukiwania pmdata.pl<br>[`search_console/`](search_console/README.md) | prawdziwe<br>(własna usługa) | • paginacja `rowLimit`/`startRow` (maks. 25 000 wierszy)<br>• `dataState`: dane wstępne vs ostateczne<br>• opóźnienie danych o kilka dni |
 | 5<br>*działa* | [HubSpot CRM API](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/contacts/guide) — kontakty (leady) i deale<br>[`hubspot/`](hubspot/README.md) | syntetyczne<br>(darmowe konto testowe) | • token statyczny aplikacji z projektu HubSpot CLI<br>• generator: kliknięcia w kontakt z GA4 → leady → deale, `batch/upsert` po e-mailu i własnej unikalnej właściwości, stały seed<br>• powiązania deal → kontakt<br>• paginacja kursorem (`after`)<br>• pełna migawka zamiast przyrostu: rekordy zmienialne, sandbox bez `MERGE`<br>• limit zapytań → 429 i ponowienia |
 | 6<br>*działa* | [Odoo](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html) (ERP, Community) — faktury i płatności<br>[`odoo/`](odoo/README.md) | syntetyczne<br>(open source lokalnie) | • Docker: Odoo 20 + PostgreSQL w osobnym projekcie compose<br>• JSON-2 API z kluczem API (XML-RPC wycofane)<br>• generator: faktura do każdego wygranego deala (`deal_key` w `ref`) i płatność po 3–45 dniach<br>• pełna migawka: status płatności zmienia się po wystawieniu |
-| 7<br>*działa* | Model w dbt na BigQuery<br>[`model/`](model/README.md) | z etapów 1–6 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
+| 7<br>*działa* | Model w dbt na BigQuery<br>[`model/`](model/README.md) | z etapów 1–6, 8 i 9 | • warstwy staging → intermediate → marty<br>• lead-to-cash na agregatach `data × źródło`: sesje → kliknięcia w kontakt → leady → deale → faktury<br>• waluta (kurs NBP), pogoda jako wymiar dnia, strefa czasowa, testy dbt |
 | 8<br>*działa* | [Nager.Date](https://nagerholidays.com/Api) — święta państwowe w Polsce<br>[`holidays/`](holidays/README.md) | prawdziwe<br>(API otwarte, użytek niekomercyjny) | • GET po roku, bez klucza; Cloudflare odrzuca domyślny User-Agent Pythona (403)<br>• zakres rozszerzany do pełnych lat → podmiana zakresu jak w innych źródłach<br>• zmiana wersji API: v3 (`date.nager.at`) i v4 (`nagerholidays.com`) z innymi nazwami pól<br>• `is_holiday` w `dim_date`, dni robocze NBP |
-| 9<br>*planowany* | [Sitemap pmdata.pl](https://pmdata.pl/sitemap-index.xml) — artykuły i daty zmian<br>`sitemap/` | prawdziwe<br>(własna usługa) | • XML zamiast JSON: indeks sitemap → sitemapy, przestrzenie nazw<br>• `lastmod` ≠ data publikacji: 34 z 59 adresów ma tę samą datę → `datePublished` z JSON-LD strony<br>• pełna migawka: adresy znikają ze strony<br>• artykuł jako wymiar dla `search_pages_daily` (złączenie po URL) |
+| 9<br>*działa* | [Sitemap pmdata.pl](https://pmdata.pl/sitemap-index.xml) — artykuły i daty zmian<br>[`sitemap/`](sitemap/README.md) | prawdziwe<br>(własna usługa) | • XML zamiast JSON: indeks sitemap → sitemapy, przestrzenie nazw<br>• `lastmod` ≠ data publikacji: to `dateModified` (bez niej `datePublished`) → daty z JSON-LD strony<br>• pełna migawka: adresy znikają ze strony<br>• artykuł do `search_pages_daily` po adresie kanonicznym (http, `www`, końcowy `/`, przekierowania 301) |
 
 **Dane i dostęp:**
 
@@ -31,7 +31,7 @@ Bronze ładują skrypty `<system>/ingest.py`; silver i gold buduje dbt w [`model
 
 | Warstwa | Gdzie | Prefiks | Materializacja | Dataset | Co robi | Przykład |
 |---|---|---|---|---|---|---|
-| Bronze | `<system>/ingest.py`; w dbt jako `sources` w `model/models/staging/<system>/_<system>__sources.yml` | `raw_` | tabela (ingest) | `raw_nbp`, `raw_weather`, `raw_ga4`, `raw_search_console`, `raw_hubspot`, `raw_odoo`, `raw_holidays` | kopia źródła 1:1, cała historia; schowek `_staging_*` tylko dla ingestu | `raw_odoo.invoices` |
+| Bronze | `<system>/ingest.py`; w dbt jako `sources` w `model/models/staging/<system>/_<system>__sources.yml` | `raw_` | tabela (ingest) | `raw_nbp`, `raw_weather`, `raw_ga4`, `raw_search_console`, `raw_hubspot`, `raw_odoo`, `raw_holidays`, `raw_sitemap` | kopia źródła 1:1, cała historia; schowek `_staging_*` tylko dla ingestu | `raw_odoo.invoices` |
 | Silver | `model/models/staging/` | `stg_` | widok | `dw_prod` (lokalnie `dw_dev`) | jeden model na tabelę `raw_*`: nazwy, typy, strefa czasowa, flagi; bez złączeń | `stg_hubspot__contacts` (`is_test_lead`) |
 | Silver | `model/models/intermediate/` | `int_` | widok | `dw_prod` (lokalnie `dw_dev`) | złączenia między źródłami i przeliczenia, których nie czyta raport | `int_deal_revenue` (deal → faktura → wpłaty) |
 | Gold | `model/models/marts/` | `dim_`, `fct_` | tabela | `dw_prod` (lokalnie `dw_dev`) | gwiazda Kimballa: wspólne wymiary i fakty dla raportów | `dim_date`, `fct_leads` |
