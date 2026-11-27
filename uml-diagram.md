@@ -1,6 +1,6 @@
 # Diagram klas UML: model danych i klucze łączące źródła
 
-Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), NBP z fakturami — walutą i datą (kurs z ostatniego dnia notowań przed fakturą), a GA4, Search Console, pogoda i święta z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [niżej](#klucze-łączące-źródła).
+Tabele `raw_*`, modele dbt w warstwie gold i klucze, którymi się łączą. CRM i ERP łączą się kluczami rekordów (krotności 1:N i 1:1), NBP z fakturami — walutą i datą (kurs z ostatniego dnia notowań przed fakturą), Search Console z sitemapą — adresem strony, a GA4, Search Console, pogoda i święta z resztą — tylko wspólnymi wymiarami `dim_date` i `dim_source` (modele dbt). Objaśnienia: [niżej](#klucze-łączące-źródła).
 
 ```mermaid
 classDiagram
@@ -97,6 +97,20 @@ classDiagram
     }
     class search_console["raw_search_console.search_daily, search_pages_daily"] {
         report_date
+        page
+    }
+    class sitemap["raw_sitemap.pages"] {
+        url PK
+        headline
+        date_published
+    }
+    class int_search_pages_with_articles {
+        <<model pośredni dbt>>
+        report_date
+        page
+        canonical_page
+        is_article
+        days_since_published
     }
     class weather["raw_weather.daily_weather"] {
         weather_date
@@ -133,6 +147,8 @@ classDiagram
 
     invoices ..> int_invoices_converted_to_pln : invoice_id
     nbp ..> int_invoices_converted_to_pln : currency + ostatni effective_date przed invoice_date
+    search_console ..> int_search_pages_with_articles : page → canonical_page
+    sitemap ..> int_search_pages_with_articles : url = canonical_page
     int_invoices_converted_to_pln ..> int_deal_revenue : kwoty w PLN
     deals ..> int_deal_revenue : deal + faktura + suma wpłat
     dim_date "1" <-- "0..*" fct_leads : lead_date
@@ -152,13 +168,13 @@ GA4 Data API zwraca agregaty, nie użytkowników, a pmdata.pl nie ma formularza 
 
 - Klucze rekordów: `contact_id`, `deal_key` (unikalna właściwość w HubSpot, w Odoo pole `ref` faktury) i `invoice_id`.
 - Źródło faktury wynika z łańcucha faktura → deal → kontakt; ruch dochodzi dopiero do sumy `data leada × źródło`, nie do pojedynczej faktury.
-- Search Console nie ma wymiaru źródła — w całości to `google / organic`.
+- Search Console nie ma wymiaru źródła — w całości to `google / organic`. Z sitemapą łączy się adresem strony po normalizacji do postaci kanonicznej (`https` bez `www`, `/blog/` → `/artykuly/`, końcowy `/`), bo Google raportuje też warianty sprzed przekierowań 301.
 - Pogoda i święta łączą się tylko datą; święta są ogólnopolskie, więc nie potrzebują wymiaru regionu. NBP łączy się z fakturą walutą i datą: kurs z ostatniego dnia notowań przed `invoice_date` (art. 31a ustawy o VAT), bo NBP nie publikuje kursów w weekendy i święta; tabela A nie zawiera PLN, więc PLN ma kurs 1.
 - `invoices.partner_id` to klient w Odoo bez e-maila — z kontaktem łączy go `deal_key`, nie partner.
 
 # Diagram sekwencji UML: od API do raportu (bronze → silver → gold)
 
-Kolejność w jednym nocnym przebiegu na przykładzie ruchu z GA4. Kroki 1–5 działają (`ga4/ingest.py`); kroki 6–10 to etap 7 (dbt), w budowie.
+Kolejność w jednym nocnym przebiegu na przykładzie ruchu z GA4. Kroki 1–5 to ingest (`ga4/ingest.py`), kroki 6–10 — etap 7 (dbt).
 
 ```mermaid
 sequenceDiagram
@@ -190,7 +206,7 @@ sequenceDiagram
     D->>STG: widok na raw_ga4.traffic_daily: nazwy, typy, strefa czasowa
     D->>INT: widok ze złączeń modeli stg_*
     D->>M: tabele wymiarów i faktów z int_* i stg_*
-    Note over D,M: testy danych po każdym modelu; błąd testu → modele niżej SKIP, zostaje poprzednia wersja tabeli
+    Note over D,M: testy danych po każdym modelu, błąd testu → modele niżej SKIP, zostaje poprzednia wersja tabeli
     A->>M: SELECT … GROUP BY dzień, źródło
 ```
 
