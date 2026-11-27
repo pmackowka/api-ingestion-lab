@@ -1,0 +1,12 @@
+sources:
+  - name: sitemap
+    description: Adresy z sitemapy pmdata.pl z tytułem i datami artykułu z JSON-LD, ładowane przez sitemap/ingest.py.
+    schema: raw_sitemap
+    config:
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 30, period: hour}
+        error_after: {count: 54, period: hour}
+    tables:
+      - name: pages
+        description: Strony; jeden wiersz = adres z sitemapy (pełna migawka).
