@@ -25,7 +25,7 @@ syntetyczne leady dostają źródło według proporcji źródeł z GA4 i wolumen
 Źródłem prawdy jest tabela „Połączenia” w `README.md` (etap ze statusem, system z folderem, dane i dostęp, czego uczy).
 Stan na 2026-11-27: etapy 1 (`nbp/`), 2 (`weather/`), 3 (`ga4/`, usługa 539646739), 4 (`search_console/`, `sc-domain:pmdata.pl`), 5 (`hubspot/`, konto testowe HubSpot: kontakty i deale), 6 (`odoo/`, Odoo 20 lokalnie w Dockerze: faktury i płatności), 7 (`model/`, dbt: staging → intermediate → marty), 8 (`holidays/`, Nager.Date v4: święta w Polsce → `is_holiday` w `dim_date`) i 9 (`sitemap/`, sitemapa pmdata.pl + daty z JSON-LD stron) działają.
 Etap 7 ma `fct_leads` i `fct_traffic_daily` na wspólnych `dim_date` (z pogodą) i `dim_source`; faktury w EUR przelicza na PLN `int_invoices_converted_to_pln` (kurs NBP z ostatniego dnia notowań przed fakturą); `int_search_pages_with_articles` łączy `search_pages_daily` z sitemapą po adresie kanonicznym.
-Kolejność dalszych etapów (decyzja 2026-11-27): model semantyczny dbt + dbt Cloud (plan Developer) → orkiestracja w Airflow (Docker na Macu) → powrót do GitHub Actions → pytania o dane przez Slack + n8n. Przy dbt Cloud dopisać wariant do `docs/orkiestracja.md`.
+Kolejność dalszych etapów (decyzja 2026-11-27): model semantyczny dbt (lokalnie) → orkiestracja w Airflow (Docker na Macu) → powrót do GitHub Actions → pytania o dane przez Slack + n8n. dbt Cloud odrzucony: plan Developer nie ma Admin API ani API Semantic Layer, a połączenie z BigQuery wymaga klucza JSON — dopisać jako wariant do `docs/orkiestracja.md`.
 Ingest Odoo działa tylko lokalnie — poza `pipeline.yml`. Znana luka w `nbp/`: `--lookback-days` nie sprawdza
 `MAX(effective_date)`, więc po przerwie dłuższej niż lookback trzeba podać `--start`.
 Automatyzacja: workflow `.github/workflows/pipeline.yml` (cron 1:41 Europe/Warsaw + `workflow_dispatch`, osobno od `ci.yml`),
@@ -56,7 +56,7 @@ Sprzątanie po zakończeniu projektu (konto HubSpot jest tymczasowe) — przypom
   (`python <system>/ingest.py` nie widzi pakietu `common`).
 - `.github/workflows/pipeline.yml` — codzienny ingest wszystkich źródeł; poświadczenia przez Workload Identity Federation
   (pula `github`, dostawca `api-ingestion-lab` wpuszcza tylko to repo) → konto `ingest-runner`. Konfiguracja w `docs/konfiguracja.md`.
-- `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji i platform do uruchamiania ingestu). `uml-diagram.md` w korzeniu — diagram klas z kluczami łączącymi źródła i diagram sekwencji.
+- `docs/` — dokumenty przekrojowe: `konfiguracja.md` (wspólne środowisko GCP i WIF dla GitHub Actions), `orkiestracja.md` (porównanie wariantów orkiestracji i platform do uruchamiania ingestu), `warstwa-semantyczna.md` (dbt Semantic Layer a Apache Ossie). `uml-diagram.md` w korzeniu — diagram klas z kluczami łączącymi źródła i diagram sekwencji.
 - `pyproject.toml` + `uv.lock` — jedno środowisko dla wszystkich folderów (świadomie, bez osobnych projektów).
 - `.github/workflows/ci.yml` — job `tests`: `uv sync --frozen` + `uv run pytest`, bez dostępu do GCP; job `dbt-unit-tests`: WIF jak w `pipeline.yml`, `dbt deps` + unit testy dbt (`--select "test_type:unit"`), bo wykonują się w BigQuery.
 
@@ -87,7 +87,7 @@ Zmiana zależności → commit razem z `uv.lock` (CI leci na `--frozen`).
 
 ## Konwencje
 
-- Kod i nazwy po angielsku, docstringi (jedno zdanie) i README po polsku. Bez komentarzy w kodzie i YAML — wyjątek: każdy test dbt ma jedną linię komentarza z typem testu (generic wbudowany, generic z paczki, singular, unit); własne testy generic — z paczki (`dbt_utils`), nie z własnych makr.
+- Kod i nazwy po angielsku, docstringi (jedno zdanie) i README po polsku. Bez komentarzy w kodzie i YAML — wyjątki: każdy test dbt ma jedną linię komentarza z typem testu (generic wbudowany, generic z paczki, singular, unit), a każdy blok warstwy semantycznej w YAML (`time_spine`, `semantic_model`, `entity`, `dimension`, `granularity`, `metrics`) — linię `# warstwa semantyczna`; własne testy generic — z paczki (`dbt_utils`), nie z własnych makr.
 - Fakty o API (limity, kody błędów, format odpowiedzi) sprawdzaj na żywo albo w dokumentacji
   i zapisuj w README folderu z datą sprawdzenia — nie z pamięci.
 - Wzorzec ingestu (z `nbp/`): okna/paginacja → pobranie → spłaszczenie do wierszy → load do
