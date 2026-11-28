@@ -2,6 +2,32 @@
 
 Pobieranie danych z API w Pythonie i ładowanie ich do BigQuery — projekt do nauki inżynierii danych. Każde źródło to osobny pipeline we własnym folderze. Kierunek: ruch i wyszukiwanie (GA4, Search Console z artykułami z sitemapy) → lead w CRM → faktura w ERP → przychód w PLN, z kontekstem dnia (kurs NBP, pogoda, święta).
 
+## Wynik
+
+Model dbt w [`model/`](model/README.md) daje dwa fakty na wspólnych wymiarach `dim_date` i `dim_source`:
+
+- `fct_leads` — jeden wiersz = kontakt (lead) z HubSpota z sumą deali, faktur z Odoo i wpłat w PLN.
+- `fct_traffic_daily` — jeden wiersz = dzień × `source / medium`: sesje i kliknięcia w kontakt z GA4.
+
+Przykładowy wiersz `fct_leads` (dane syntetyczne z konta testowego HubSpot i lokalnego Odoo, wybrane kolumny):
+
+| lead_date | source_medium | won_deals | won_amount | invoiced_amount_net | invoiced_amount_gross | paid_amount |
+|---|---|--:|--:|--:|--:|--:|
+| 2026-08-10 | fb / organic | 1 | 8000 | 8000 | 9840 | 9840 |
+
+Faktura netto równa się kwocie wygranego deala po przeliczeniu kursem — pilnuje tego test [`assert_odoo_invoices_match_won_deals.sql`](model/tests/assert_odoo_invoices_match_won_deals.sql). Diagram klas z kluczami łączącymi źródła: [`uml-diagram.md`](uml-diagram.md).
+
+## Uruchomienie
+
+[![CI](https://github.com/pmackowka/api-ingestion-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/pmackowka/api-ingestion-lab/actions/workflows/ci.yml)
+
+```bash
+uv sync --frozen   # zależności z uv.lock
+uv run pytest      # testy bez sieci i GCP, to samo co CI
+```
+
+Pierwszy ingest do BigQuery: [`nbp/README.md`](nbp/README.md#konfiguracja).
+
 ## Połączenia
 
 Każdy folder ma własny README z konfiguracją krok po kroku.
