@@ -1,8 +1,13 @@
 models:
   - name: dim_date
     description: Wymiar daty; jeden wiersz = dzień od 2025-01-01 do dziś (Europe/Warsaw).
+    # warstwa semantyczna
+    time_spine:
+      standard_granularity_column: date_day
     columns:
       - name: date_day
+        # warstwa semantyczna
+        granularity: day
         data_tests:
           # generic wbudowany
           - unique
@@ -94,6 +99,10 @@ models:
 
   - name: fct_leads
     description: Leady z HubSpota z sumą deali, faktur i wpłat; jeden wiersz = kontakt, leady testowe oznaczone flagą.
+    # warstwa semantyczna
+    semantic_model:
+      enabled: true
+    agg_time_dimension: lead_date
     data_tests:
       # generic z paczki: złączenie z dealami nie gubi kontaktów
       - dbt_utils.equal_rowcount:
@@ -107,12 +116,20 @@ models:
             severity: warn
     columns:
       - name: contact_id
+        # warstwa semantyczna
+        entity:
+          type: primary
+          name: lead
         data_tests:
           # generic wbudowany: deale zsumowane po kontakcie, więc lead się nie dubluje
           - unique
           # generic wbudowany
           - not_null
       - name: lead_date
+        # warstwa semantyczna
+        granularity: day
+        dimension:
+          type: time
         data_tests:
           # generic wbudowany: każdy dzień leada istnieje w wymiarze daty
           - relationships:
@@ -120,6 +137,9 @@ models:
                 to: ref('dim_date')
                 field: date_day
       - name: source_medium
+        # warstwa semantyczna
+        dimension:
+          type: categorical
         data_tests:
           # generic wbudowany: źródło prawdziwego leada istnieje w wymiarze źródła; dim_source pomija źródła testowe
           - relationships:
@@ -128,3 +148,35 @@ models:
                 field: source_medium
               config:
                 where: "not is_test_lead"
+      # warstwa semantyczna
+      - name: is_test_lead
+        dimension:
+          type: categorical
+    # warstwa semantyczna
+    metrics:
+      - name: leads
+        description: Liczba leadów (kontaktów); leady testowe odfiltruj wymiarem is_test_lead.
+        type: simple
+        label: Leady
+        agg: count
+        expr: contact_id
+      - name: won_deals
+        description: Liczba wygranych deali.
+        type: simple
+        label: Wygrane deale
+        agg: sum
+      - name: won_amount
+        description: Kwota netto wygranych deali w PLN.
+        type: simple
+        label: Wartość wygranych deali
+        agg: sum
+      - name: invoiced_amount_net
+        description: Zafakturowana kwota netto w PLN.
+        type: simple
+        label: Faktury netto
+        agg: sum
+      - name: paid_amount
+        description: Suma wpłat w PLN po kursie faktury.
+        type: simple
+        label: Wpłaty
+        agg: sum
